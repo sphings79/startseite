@@ -23,7 +23,7 @@ final class Exporter
             'version'     => 2,
             'exported_at' => time(),
             'groups'      => Db::all('SELECT id, title, position, no_check FROM groups ORDER BY position, id'),
-            'sections'    => Db::all('SELECT id, group_id, position, title, title_center, collapsed, width, mode, cols, tile_size, ratio, bg_color, bg_opacity, border_color, border_width, radius, padding FROM sections ORDER BY group_id, position, id'),
+            'sections'    => Db::all('SELECT id, group_id, position, title, title_center, collapsed, width, mode, cols, tile_cols, tile_size, ratio, bg_color, bg_opacity, border_color, border_width, radius, padding FROM sections ORDER BY group_id, position, id'),
             'dials'       => $dials,
             'settings'    => Settings::all(),
         ];

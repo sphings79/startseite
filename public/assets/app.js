@@ -485,8 +485,12 @@
     function sectionEl(sec, items, first) {
         const phoneList = phone.matches && S.settings.mobile_list; // the phone list switch overrides every section
         const list = phoneList || sec.mode === 'list';
-        const el = h('section', { class: 'sec' + (sec.collapsed ? ' collapsed' : ''), 'data-sid': sec.id });
-        el.style.setProperty('--frac', String(sec.width / 100));
+        const auto = sec.width === 0; // sized by its content: tile_cols tiles (or list columns) side by side at most
+        const el = h('section', { class: 'sec' + (sec.collapsed ? ' collapsed' : '') + (auto ? ' auto' : '') + (auto && list ? ' islist' : ''), 'data-sid': sec.id });
+        if (!auto) el.style.setProperty('--frac', String(sec.width / 100));
+        if (auto) el.style.setProperty('--n', String(list ? sec.cols : Math.max(1, Math.min(sec.tile_cols, items.length + (first && S.settings.show_add_button ? 1 : 0)))));
+        el.style.setProperty('--sec-bw', (sec.border_color ? sec.border_width : 0) + 'px');
+        if (sec.tile_size) el.style.setProperty('--tile-w', SIZES[sec.tile_size] + 'px');
         if (sec.bg_color) el.style.setProperty('--sec-bg', rgba(sec.bg_color, sec.bg_opacity));
         if (sec.border_width && sec.border_color) el.style.setProperty('--sec-border', `${sec.border_width}px solid ${sec.border_color}`);
         if (sec.bg_color && sec.bg_opacity >= 60) el.style.setProperty('--sec-text', textOn(sec.bg_color)); // a solid frame needs its own title colour
@@ -507,9 +511,8 @@
             const corner = h('div', { class: 'corner' }, grip, gear);
             el.append(corner);
         }
-        const body = h('div', { class: 'grid sbody' + (list ? ' listv' : '') + (sec.tile_size && !list ? ' sized' : '') });
+        const body = h('div', { class: 'grid sbody' + (list ? ' listv' : '') });
         if (!phone.matches && list) body.style.setProperty('--lcols', String(sec.cols));
-        if (sec.tile_size) body.style.setProperty('--tile-min', SIZES[sec.tile_size] + 'px');
         if (sec.ratio) body.style.setProperty('--ratio', sec.ratio.replace(':', ' / '));
         body.append(...items.map((d) => tileEl(d, list)));
         if (first && S.settings.show_add_button) {
@@ -565,9 +568,21 @@
         document.addEventListener('pointercancel', cancel);
     }
 
+    // Tile width as on a full-width grid, so a narrow section shows tiles of the same size instead of stretching them.
+    function updateTileWidth() {
+        const grid = $('#grid');
+        if (!grid) return;
+        const min = parseFloat(getComputedStyle($('#content')).getPropertyValue('--tile-min')) || 104;
+        const cols = S.settings.columns;
+        const gap = S.settings.spacing;
+        const w = Math.max(min, Math.floor((grid.clientWidth - (cols - 1) * gap) / cols));
+        grid.style.setProperty('--tile-w', w + 'px');
+    }
+
     function renderGrid() {
         const grid = $('#grid');
         if (!grid) return;
+        updateTileWidth();
         grid.replaceChildren();
         renderTagbar();
         if (searching()) {
@@ -607,7 +622,7 @@
     // Create or edit a section; the look is stored per section (no light/dark pairs: use opacity to stay readable on both).
     function editSection(sec) {
         const gid = sec ? sec.group_id : realGroupId();
-        const st = sec ? { ...sec } : { title: '', title_center: false, width: 50, mode: 'inherit', cols: 1, tile_size: '', ratio: '', bg_color: '#1971c2', bg_opacity: 30, border_color: '#74c0fc', border_width: 1, radius: 14, padding: 14 };
+        const st = sec ? { ...sec } : { title: '', title_center: false, width: 50, mode: 'inherit', cols: 1, tile_cols: 4, tile_size: '', ratio: '', bg_color: '#1971c2', bg_opacity: 30, border_color: '#74c0fc', border_width: 1, radius: 14, padding: 14 };
         let dlg;
         const msg = h('p', { class: 'msg err', hidden: true });
         const sel = (label, key, options, num = false) => h('label', { class: 'field' }, h('span', { text: label }),
@@ -655,10 +670,12 @@
                     h('input', { type: 'text', maxLength: 80, value: st.title, autofocus: !sec, oninput: (e) => { st.title = e.target.value; } })),
                 h('div', { class: 'row' },
                     sel('Titel-Ausrichtung', 'title_center', [[false, 'Links'], [true, 'Zentriert']]),
-                    sel('Breite', 'width', [[25, '1/4'], [33, '1/3'], [50, '1/2'], [67, '2/3'], [75, '3/4'], [100, 'Volle Breite']], true)),
+                    sel('Breite', 'width', [[0, 'Automatisch (nach Inhalt)'], [25, '1/4'], [33, '1/3'], [50, '1/2'], [67, '2/3'], [75, '3/4'], [100, 'Volle Breite']], true)),
                 h('div', { class: 'row' },
                     sel('Darstellung', 'mode', [['inherit', 'Kacheln (Handy: wie Einstellung)'], ['tiles', 'Kacheln'], ['list', 'Liste']]),
                     sel('Listenspalten (Desktop)', 'cols', [[1, '1'], [2, '2'], [3, '3']], true)),
+                h('div', { class: 'row' },
+                    num('Kacheln pro Zeile bei automatischer Breite (1–12)', 'tile_cols', 1, 12), h('span')),
                 h('div', { class: 'row' },
                     sel('Kachelgröße', 'tile_size', [['', 'Wie global'], ['s', 'Klein'], ['m', 'Mittel'], ['l', 'Groß']]),
                     sel('Seitenverhältnis', 'ratio', [['', 'Wie global'], ['1:1', '1 : 1'], ['4:3', '4 : 3'], ['16:10', '16 : 10'], ['16:9', '16 : 9']])),
@@ -1896,6 +1913,7 @@
     applyTheme();
     renderTabs();
     renderGrid();
+    if (window.ResizeObserver) { let last = 0; new ResizeObserver(() => { const w = $('#grid')?.clientWidth || 0; if (w !== last) { last = w; updateTileWidth(); } }).observe($('#content')); }
     schedulePoll();
     if ('serviceWorker' in navigator) navigator.serviceWorker.register(S.base + '/sw.js', { scope: S.base + '/' }).catch(() => {});
 })();

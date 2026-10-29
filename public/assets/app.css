@@ -160,7 +160,9 @@ button, input, select { font: inherit; color: inherit; }
 @media (hover: none) { .sec .gear, .sec .grip { opacity: .45; } .sec .corner { opacity: .6; } }
 .sec.collapsed .sbody { display: none; }
 .sec .gear svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.sbody.sized { grid-template-columns: repeat(auto-fill, minmax(var(--tile-min), 1fr)); }
+.sec.auto { flex: 0 0 auto; max-width: 100%; width: calc(var(--n, 4) * var(--tile-w, 104px) + (var(--n, 4) - 1) * var(--gap) + 2 * var(--sec-pad, 0px) + 2 * var(--sec-bw, 0px)); }
+.sec.auto.islist { width: calc(var(--n, 1) * 280px + (var(--n, 1) - 1) * 8px + 2 * var(--sec-pad, 0px) + 2 * var(--sec-bw, 0px)); }
+@media (min-width: 641px) { .sbody:not(.listv) { grid-template-columns: repeat(auto-fill, var(--tile-w, 104px)); } }
 .empty.small { padding: 18px 0; font-size: .85rem; grid-column: 1 / -1; }
 .add-section { flex: 1 1 100%; background: none; border: 1px dashed var(--border); border-radius: 12px; padding: 10px; color: var(--muted); cursor: pointer; opacity: .6; }
 .add-section:hover { opacity: 1; color: var(--accent); border-color: var(--accent); }
@@ -335,7 +337,7 @@ dialog, .drawer-scroll, .dlg-body, .opts-body, .opts-nav { overscroll-behavior: 
 .listv .add-tile { aspect-ratio: auto; height: 48px; font-size: 1.5rem; }
 
 @media (max-width: 640px) {
-    .sec { flex: 1 1 100%; }
+    .sec, .sec.auto { flex: 1 1 100%; width: auto; }
     .grid.listv { grid-template-columns: 1fr; }
 
     :root { --tile-min: 92px; }

@@ -211,6 +211,13 @@ SQL);
             $pdo->exec('PRAGMA user_version=6');
             $pdo->exec('COMMIT');
         }
+        if ($version < 7) {
+            // Sections with width 0 size themselves to their content; tile_cols is the most tiles they put side by side.
+            $pdo->exec('BEGIN');
+            $pdo->exec('ALTER TABLE sections ADD COLUMN tile_cols INTEGER NOT NULL DEFAULT 4');
+            $pdo->exec('PRAGMA user_version=7');
+            $pdo->exec('COMMIT');
+        }
     }
 
     /** @return list<array<string,mixed>> */

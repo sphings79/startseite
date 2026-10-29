@@ -57,6 +57,10 @@ foreach ([['https://a.example', 'A'], ['https://b.example', 'B'], ['https://c.ex
 }
 $s2 = Sections::create(['group_id' => $home, 'title' => 'Media', 'width' => 50, 'mode' => 'list', 'cols' => 2, 'bg_color' => '#1971c2', 'bg_opacity' => 30]);
 T::check('section is created with its values', $s2['title'] === 'Media' && $s2['mode'] === 'list' && $s2['cols'] === 2 && $s2['width'] === 50);
+$auto = Sections::create(['group_id' => $home, 'title' => 'Auto', 'width' => 0, 'tile_cols' => 6]);
+T::check('automatic width (0) with tiles per row is accepted', $auto['width'] === 0 && $auto['tile_cols'] === 6);
+T::throws('too many tiles per row rejected', fn () => Sections::create(['group_id' => $home, 'tile_cols' => 13]), InvalidArgumentException::class);
+Sections::delete($auto['id']);
 T::throws('invalid width rejected', fn () => Sections::create(['group_id' => $home, 'width' => 42]), InvalidArgumentException::class);
 T::throws('invalid colour rejected', fn () => Sections::create(['group_id' => $home, 'bg_color' => 'red']), InvalidArgumentException::class);
 T::throws('too many columns rejected', fn () => Sections::create(['group_id' => $home, 'cols' => 9]), InvalidArgumentException::class);

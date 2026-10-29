@@ -7,7 +7,7 @@ declare(strict_types=1);
  */
 final class Sections
 {
-    private const WIDTHS = [25, 33, 50, 67, 75, 100];
+    private const WIDTHS = [0, 25, 33, 50, 67, 75, 100]; // 0 = automatic, sized by its content
     private const MODES = ['inherit', 'tiles', 'list'];
     private const SIZES = ['', 's', 'm', 'l'];
     private const RATIOS = ['', '1:1', '4:3', '16:10', '16:9'];
@@ -30,6 +30,7 @@ final class Sections
             'width'        => (int) $s['width'],
             'mode'         => $s['mode'],
             'cols'         => (int) $s['cols'],
+            'tile_cols'    => (int) $s['tile_cols'],
             'tile_size'    => $s['tile_size'],
             'ratio'        => $s['ratio'],
             'bg_color'     => $s['bg_color'],
@@ -128,7 +129,7 @@ final class Sections
                 $out[$k] = self::color($in[$k]);
             }
         }
-        $ranges = ['cols' => [1, 3, 'Spalten'], 'bg_opacity' => [0, 100, 'Deckkraft'], 'border_width' => [0, 8, 'Rahmenstärke'],
+        $ranges = ['cols' => [1, 3, 'Spalten'], 'tile_cols' => [1, 12, 'Kacheln pro Zeile'], 'bg_opacity' => [0, 100, 'Deckkraft'], 'border_width' => [0, 8, 'Rahmenstärke'],
             'radius' => [0, 40, 'Eckenradius'], 'padding' => [0, 40, 'Innenabstand']];
         foreach ($ranges as $k => [$min, $max, $what]) {
             if (array_key_exists($k, $in)) {
@@ -138,7 +139,7 @@ final class Sections
         return $out;
     }
 
-    private const COLUMNS = ['title', 'title_center', 'collapsed', 'width', 'mode', 'cols', 'tile_size', 'ratio', 'bg_color', 'bg_opacity', 'border_color', 'border_width', 'radius', 'padding'];
+    private const COLUMNS = ['title', 'title_center', 'collapsed', 'width', 'mode', 'cols', 'tile_cols', 'tile_size', 'ratio', 'bg_color', 'bg_opacity', 'border_color', 'border_width', 'radius', 'padding'];
 
     public static function create(array $in): array
     {
@@ -146,7 +147,7 @@ final class Sections
         if (Db::one('SELECT 1 FROM groups WHERE id = ?', [$group]) === null) {
             throw new InvalidArgumentException('Gruppe unbekannt.');
         }
-        $defaults = ['title' => '', 'title_center' => 0, 'collapsed' => 0, 'width' => 50, 'mode' => 'inherit', 'cols' => 1, 'tile_size' => '', 'ratio' => '',
+        $defaults = ['title' => '', 'title_center' => 0, 'collapsed' => 0, 'width' => 50, 'mode' => 'inherit', 'cols' => 1, 'tile_cols' => 4, 'tile_size' => '', 'ratio' => '',
             'bg_color' => '', 'bg_opacity' => 30, 'border_color' => '', 'border_width' => 0, 'radius' => 14, 'padding' => 14];
         $v = self::fields($in, $defaults);
         $pos = (int) Db::one('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM sections WHERE group_id = ?', [$group])['p'];
