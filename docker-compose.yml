@@ -1,0 +1,24 @@
+services:
+  startseite:
+    # Pulls the published image; `docker compose up -d --build` builds it from this folder instead.
+    image: ghcr.io/sphings79/startseite:latest
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      # Only used on the first start, while no user exists yet. Remove the password afterwards.
+      STARTSEITE_USER: admin
+      STARTSEITE_PASSWORD: change-me-please-12345
+      # Behind a reverse proxy: its address, so X-Forwarded-* headers are trusted.
+      # STARTSEITE_TRUSTED_PROXIES: 172.18.0.1
+      # Serving from a subfolder behind a proxy that strips the prefix is not needed; only set this when the
+      # proxy passes the prefix through:
+      # STARTSEITE_BASE_PATH: /startseite
+      # Allow screenshots/logos of LAN addresses (the server then reaches your internal services):
+      # STARTSEITE_BLOCK_PRIVATE: "0"
+    volumes:
+      - startseite-data:/data
+
+volumes:
+  startseite-data:

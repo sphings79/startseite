@@ -1,0 +1,5 @@
+data
+dist
+.git
+config/config.php
+public/app_path.php

@@ -1,0 +1,14 @@
+Options -Indexes
+DirectoryIndex index.php
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+# Pass the Authorization/Host-related headers untouched; never serve PHP config or data from here.
+<FilesMatch "^(app_path\.php)$">
+    Require all denied
+</FilesMatch>
