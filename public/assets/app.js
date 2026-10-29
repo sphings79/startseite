@@ -1501,9 +1501,14 @@
                 };
                 draw();
                 const secBox = h('div', { class: 'glist' });
+                const openGroups = new Set([realGroupId()]); // the tab you are on starts open, the rest folded
                 const drawSecs = () => secBox.replaceChildren(...groupsSorted().map((g) => {
                     const arr = sectionsOf(g.id);
-                    return h('div', { class: 'secgrp' }, h('div', { class: 'lbl', text: g.title }),
+                    const count = S.dials.filter((d) => d.group_id === g.id).length;
+                    return h('details', { class: 'secgrp', open: openGroups.has(g.id), ontoggle: (e) => { e.currentTarget.open ? openGroups.add(g.id) : openGroups.delete(g.id); } },
+                        h('summary', {}, h('span', { class: 'gname', text: g.title }),
+                            h('span', { class: 'badge', text: `${arr.length} ${arr.length === 1 ? 'Abschnitt' : 'Abschnitte'}` }),
+                            h('span', { class: 'badge', text: `${count} Lesezeichen` })),
                         arr.map((x, i) => h('div', { class: 'gitem' },
                             h('span', { class: 'secname', text: (x.title || (arr.length > 1 ? 'Abschnitt ' + (i + 1) : 'Standard (ohne Titel)')) + ` · ${S.dials.filter((d) => secOf(d)?.id === x.id).length} Lesezeichen` }),
                             h('button', { class: 'icon-btn', title: 'Nach oben', disabled: i === 0, onclick: () => moveSec(g.id, arr, i, -1) }, icon('up')),

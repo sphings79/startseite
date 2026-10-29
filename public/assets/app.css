@@ -173,7 +173,14 @@ button, input, select { font: inherit; color: inherit; }
 .swatch { width: 30px; height: 30px; padding: 3px; border-radius: 50%; border: 1px solid var(--border); background: var(--panel); cursor: pointer; }
 .swatch i { display: block; width: 100%; height: 100%; border-radius: 50%; }
 .set.inline { display: flex; align-items: center; gap: 10px; padding: 0; }
-.secgrp { margin-bottom: 10px; }
+.secgrp { margin-bottom: 8px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); overflow: hidden; }
+.secgrp > summary { display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; list-style: none; font-weight: 600; background: var(--field); user-select: none; }
+.secgrp > summary::-webkit-details-marker { display: none; }
+.secgrp > summary::before { content: '▸'; color: var(--muted); font-size: .8rem; width: 1em; }
+.secgrp[open] > summary::before { content: '▾'; }
+.secgrp > summary .gname { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.secgrp > summary .badge { font-weight: 500; }
+.secgrp > .gitem { padding: 6px 12px; border-top: 1px solid var(--border); }
 .secname { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: .9rem; }
 .compact { --tile-min: 76px; }
 
