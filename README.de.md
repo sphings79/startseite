@@ -15,7 +15,7 @@
 
 **Startseite** ist eine selbst gehostete **Speed-Dial-Startseite und Lesezeichen-Übersicht** für die Startseite oder den neuen Tab deines Browsers.
 Lesezeichen sind Kacheln mit automatischen Logos oder Screenshots, sortiert in Tabs und **Abschnitte**, mit einem Tastendruck durchsuchbar
-und im Hintergrund auf tote Links geprüft. Ein Benutzer, eine SQLite-Datei, kein Framework, keine Composer-Pakete.
+und im Hintergrund auf tote Links geprüft. Mehrere Benutzer mit getrennten Daten, eine SQLite-Datei, kein Framework, keine Composer-Pakete.
 
 > Die Oberfläche ist derzeit **nur auf Deutsch**. README, Anleitungen und Code-Kommentare gibt es auf Deutsch und Englisch.
 
@@ -58,7 +58,7 @@ Wer die Browser-Erweiterung **Speed Dial 2** genutzt hat, kann deren Export impo
 
 ```bash
 docker run -d --name startseite -p 8080:80 \
-  -e STARTSEITE_USER=admin -e STARTSEITE_PASSWORD='ein-langes-passwort' \
+  -e STARTSEITE_ADMIN_EMAIL=du@example.org -e STARTSEITE_PASSWORD='Ein-langes-Passw0rt' \
   -v startseite-data:/data \
   ghcr.io/sphings79/startseite:latest
 ```
@@ -73,7 +73,7 @@ Mit Docker Compose (baut das Image selbst, wenn du es nicht ziehst):
 docker compose up -d --build
 ```
 
-Vorher `STARTSEITE_USER` und `STARTSEITE_PASSWORD` (mindestens 12 Zeichen) in der `docker-compose.yml` setzen. Die Daten liegen im Volume `startseite-data`.
+Vorher `STARTSEITE_ADMIN_EMAIL` und `STARTSEITE_PASSWORD` (mindestens 12 Zeichen mit Buchstaben, einer Zahl und einem Sonderzeichen) in der `docker-compose.yml` setzen. Die Daten liegen im Volume `startseite-data`.
 
 ## Installation ohne Docker
 
@@ -137,6 +137,28 @@ Das ungeschnittene Original bleibt auf dem Server, ist aber nicht Teil der Siche
 
 Der Worker schreibt ZIP-Sicherungen nach `DATA_DIR/backups/` im eingestellten Abstand. Wiederherstellen über Einstellungen → System → Import. Auf der Kommandozeile: `php bin/import.php export.json [--merge]`.
 
+### Mehrere Benutzer
+
+Alle melden sich mit einer **E-Mail-Adresse** an. Das erste Konto ist der **Admin**. Jeder Benutzer hat eine völlig getrennte Startseite (Tabs, Lesezeichen, Bilder, Einstellungen, Sicherungen); der Admin sieht und verwaltet Konten, nie die Lesezeichen anderer.
+
+- **Registrierung:** Einstellungen → Benutzer (nur Admins). Wählbar: *niemand*, *nur freigegebene Adressen und Domains* (eine Domain wie `example.org` oder eine Adresse pro Zeile) oder *jeder*. Jedes neue Konto muss seine Adresse über einen Link in einer Mail bestätigen.
+- **Passwort vergessen:** „Passwort vergessen?“ auf der Anmeldeseite schickt einen Link, der eine Stunde gilt und nur einmal funktioniert. Die Antwort sieht bei unbekannten Adressen gleich aus. Ein Reset beendet alle Sitzungen dieses Benutzers.
+- **Admin-Werkzeuge:** Personen einladen (sie legen ihr Passwort per Link selbst fest), Reset-Mail senden, verlorenen zweiten Faktor entfernen, sperren, zum Admin machen, Benutzer mit allen Daten löschen, Sicherung eines Benutzers erstellen und **eine Sicherung nur für diesen einen Benutzer wiederherstellen**.
+- **Mail (SMTP):** Server, Port, Verschlüsselung (keine, STARTTLS oder SSL/TLS), optionale Anmeldung, Absender und ein Testknopf. Ein interner Relay ohne Anmeldung und Verschlüsselung funktioniert, externe Server mit TLS und Passwort ebenso. Das Passwort wird verschlüsselt gespeichert. Mails gehen auf Deutsch oder Englisch (Wahl des Benutzers).
+- **Passwörter** brauchen mindestens 12 Zeichen mit Buchstaben, einer Zahl und einem Sonderzeichen.
+- **Noch keine Mail oder ausgesperrt?** Alles geht auch auf der Kommandozeile:
+
+```bash
+php bin/admin.php list
+php bin/admin.php create du@example.org --role=admin
+php bin/admin.php password du@example.org
+php bin/admin.php registration domains example.org example.net
+php bin/admin.php url https://start.example.org       # Basis-URL für Links in Mails
+# Docker: docker compose exec -u www-data startseite php /app/bin/admin.php list
+```
+
+**Umstieg von der Einzelbenutzer-Version:** Dein Konto und alle Daten bleiben und werden zum Admin. Gib ihm einmal eine Adresse mit `php bin/admin.php claim du@example.org` (das Passwort bleibt), danach meldest du dich mit dieser Adresse an. `STARTSEITE_USER` heißt jetzt `STARTSEITE_ADMIN_EMAIL`.
+
 ### Anmeldung absichern (optional)
 
 Einstellungen → Sicherheit. Ohne Zusatz genügt das Passwort, was im reinen Heimnetz völlig in Ordnung ist.
@@ -176,7 +198,7 @@ GitHub Actions testen mit PHP 8.2, 8.3 und 8.4, bauen das Docker-Image, prüfen 
 **Gibt es eine gehostete Version?** Nein, du betreibst sie selbst.
 **Kann ich sie als Startseite oder neuen Tab im Browser nutzen?** Ja. Die Startseite des Browsers auf die URL stellen, oder eine Neuer-Tab-Erweiterung, die eine URL öffnet.
 **Funkt sie nach Hause?** Nein. Äußere Anfragen gibt es nur, wenn du sie auslöst: Logo oder Seite eines Lesezeichens holen, Link-Prüfung und die oben genannten Icon-Quellen.
-**Mehrere Benutzer?** Nein, absichtlich nur einer.
+**Mehrere Benutzer?** Ja. Jeder hat eigene Tabs, Lesezeichen, Einstellungen und Sicherungen, der Admin verwaltet die Konten (siehe „Mehrere Benutzer“).
 **Andere Sprachen?** Die Oberfläche ist vorerst Deutsch.
 
 ## Das Projekt unterstützen

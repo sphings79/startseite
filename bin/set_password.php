@@ -4,8 +4,8 @@ declare(strict_types=1);
 /**
  * Creates or updates the single user.
  *
- *   php bin/set_password.php [username]        password is read from stdin (hidden on a terminal)
- *   php bin/set_password.php --from-env        STARTSEITE_USER / STARTSEITE_PASSWORD, only if no user exists yet
+ *   php bin/set_password.php <email>           creates the user or sets a new password; read from stdin (hidden on a terminal)
+ *   php bin/set_password.php --from-env        STARTSEITE_ADMIN_EMAIL / STARTSEITE_PASSWORD, only if no user exists yet
  *   php bin/set_password.php --reset-2fa       removes TOTP, passkeys and recovery codes (lost second factor)
  */
 if (PHP_SAPI !== 'cli') {
@@ -20,14 +20,14 @@ if (in_array('--reset-2fa', $argv, true)) {
 }
 
 if (in_array('--from-env', $argv, true)) {
-    $user = getenv('STARTSEITE_USER') ?: 'admin';
+    $user = getenv('STARTSEITE_ADMIN_EMAIL') ?: getenv('STARTSEITE_USER') ?: 'admin';
     $pass = getenv('STARTSEITE_PASSWORD');
     if (Auth::userCount() > 0 || $pass === false || $pass === '') {
         exit(0);
     }
     try {
-        Auth::setUser($user, $pass);
-        fwrite(STDOUT, "User '$user' created.\n");
+        Auth::setUser($user, $pass, 'admin');
+        fwrite(STDOUT, "Admin '$user' created.\n");
     } catch (InvalidArgumentException $e) {
         fwrite(STDERR, $e->getMessage() . "\n");
         exit(1);
@@ -35,7 +35,11 @@ if (in_array('--from-env', $argv, true)) {
     exit(0);
 }
 
-$username = $argv[1] ?? 'admin';
+$username = $argv[1] ?? '';
+if ($username === '') {
+    fwrite(STDERR, "Usage: php bin/set_password.php <email>   (see also bin/admin.php)\n");
+    exit(1);
+}
 $tty = stream_isatty(STDIN);
 if ($tty) {
     fwrite(STDERR, "Passwort für '$username': ");

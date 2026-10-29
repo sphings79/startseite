@@ -51,7 +51,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 $error = 'Zu viele Fehlversuche. Bitte in ' . (int) ceil($res['retry_after'] / 60) . ' Minuten erneut versuchen.';
             } else {
                 http_response_code(401);
-                $error = 'Benutzername oder Passwort falsch.';
+                $error = 'E-Mail-Adresse oder Passwort falsch.';
             }
         }
     }
@@ -61,4 +61,5 @@ header('Cache-Control: no-store');
 $token = Auth::loginToken();
 $appName = (string) Settings::get('app_name');
 $noUser = Auth::userCount() === 0;
+$regOpen = AppConfig::get('reg_mode') !== 'off';
 require APP_ROOT . '/src/views/' . ($mfa !== null ? 'login_mfa.php' : 'login.php');

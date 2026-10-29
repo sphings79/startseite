@@ -12,7 +12,12 @@ Http::securityHeaders();
 try {
     $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
     $path = Http::path();
+    Auth::current(); // sets the user whose settings the manifest and icons use
 
+    if (in_array($path, ['/register', '/forgot', '/reset', '/verify', '/verify-email'], true)) {
+        require APP_ROOT . '/src/views/account_controller.php';
+        exit;
+    }
     if ($path === '/login') {
         require APP_ROOT . '/src/views/login_controller.php';
         exit;

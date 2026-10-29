@@ -8,8 +8,9 @@ services:
       - "8080:80"
     environment:
       # Only used on the first start, while no user exists yet. Remove the password afterwards.
-      STARTSEITE_USER: admin
-      STARTSEITE_PASSWORD: change-me-please-12345
+      # Creates the first account, which is the admin. The password needs 12+ characters with letters, a digit and a special character.
+      STARTSEITE_ADMIN_EMAIL: admin@example.org
+      STARTSEITE_PASSWORD: change-me-Please-12345!
       # Behind a reverse proxy: its address, so X-Forwarded-* headers are trusted.
       # STARTSEITE_TRUSTED_PROXIES: 172.18.0.1
       # Serving from a subfolder behind a proxy that strips the prefix is not needed; only set this when the

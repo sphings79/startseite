@@ -15,7 +15,7 @@ final class Sections
     /** @return list<array<string,mixed>> */
     public static function all(): array
     {
-        return array_map([self::class, 'out'], Db::all('SELECT * FROM sections ORDER BY group_id, position, id'));
+        return array_map([self::class, 'out'], Db::all('SELECT * FROM sections WHERE user_id = ? ORDER BY group_id, position, id', [Ctx::uid()]));
     }
 
     public static function out(array $s): array
@@ -46,29 +46,30 @@ final class Sections
     /** The section that takes dials without a (valid) section: first one of the group, created if missing. */
     public static function defaultId(int $groupId): int
     {
-        $row = Db::one('SELECT id FROM sections WHERE group_id = ? ORDER BY position, id LIMIT 1', [$groupId]);
+        $row = Db::one('SELECT id FROM sections WHERE group_id = ? AND user_id = ? ORDER BY position, id LIMIT 1', [$groupId, Ctx::uid()]);
         if ($row) {
             return (int) $row['id'];
         }
-        Db::run('INSERT INTO sections (group_id, position, padding) VALUES (?, 0, 0)', [$groupId]);
+        Db::run('INSERT INTO sections (group_id, user_id, position, padding) VALUES (?, ?, 0, 0)', [$groupId, Ctx::uid()]);
         return Db::insertId();
     }
 
     public static function belongs(int $sectionId, int $groupId): bool
     {
-        return Db::one('SELECT 1 FROM sections WHERE id = ? AND group_id = ?', [$sectionId, $groupId]) !== null;
+        return Db::one('SELECT 1 FROM sections WHERE id = ? AND group_id = ? AND user_id = ?', [$sectionId, $groupId, Ctx::uid()]) !== null;
     }
 
     /** Gives every group a section and every dial a section of its own group. */
     public static function repair(): void
     {
-        foreach (Db::all('SELECT id FROM groups WHERE id NOT IN (SELECT group_id FROM sections)') as $g) {
+        foreach (Db::all('SELECT id FROM groups WHERE user_id = ? AND id NOT IN (SELECT group_id FROM sections)', [Ctx::uid()]) as $g) {
             self::defaultId((int) $g['id']);
         }
-        if (Db::one('SELECT 1 FROM dials WHERE section_id IS NULL OR section_id NOT IN (SELECT id FROM sections WHERE group_id = dials.group_id) LIMIT 1') === null) {
+        $broken = 'user_id = ? AND (section_id IS NULL OR section_id NOT IN (SELECT id FROM sections WHERE group_id = dials.group_id))';
+        if (Db::one('SELECT 1 FROM dials WHERE ' . $broken . ' LIMIT 1', [Ctx::uid()]) === null) {
             return;
         }
-        foreach (Db::all('SELECT DISTINCT group_id FROM dials WHERE section_id IS NULL OR section_id NOT IN (SELECT id FROM sections WHERE group_id = dials.group_id)') as $g) {
+        foreach (Db::all('SELECT DISTINCT group_id FROM dials WHERE ' . $broken, [Ctx::uid()]) as $g) {
             Db::run('UPDATE dials SET section_id = ? WHERE group_id = ? AND (section_id IS NULL OR section_id NOT IN (SELECT id FROM sections WHERE group_id = ?))',
                 [self::defaultId((int) $g['group_id']), (int) $g['group_id'], (int) $g['group_id']]);
         }
@@ -144,21 +145,21 @@ final class Sections
     public static function create(array $in): array
     {
         $group = (int) ($in['group_id'] ?? 0);
-        if (Db::one('SELECT 1 FROM groups WHERE id = ?', [$group]) === null) {
+        if (Db::one('SELECT 1 FROM groups WHERE id = ? AND user_id = ?', [$group, Ctx::uid()]) === null) {
             throw new InvalidArgumentException('Gruppe unbekannt.');
         }
         $defaults = ['title' => '', 'title_center' => 0, 'collapsed' => 0, 'width' => 50, 'mode' => 'inherit', 'cols' => 1, 'tile_cols' => 4, 'tile_size' => '', 'ratio' => '',
             'bg_color' => '', 'bg_opacity' => 30, 'border_color' => '', 'border_width' => 0, 'radius' => 14, 'padding' => 14];
         $v = self::fields($in, $defaults);
         $pos = (int) Db::one('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM sections WHERE group_id = ?', [$group])['p'];
-        Db::run('INSERT INTO sections (group_id, position, ' . implode(', ', self::COLUMNS) . ') VALUES (?, ?, ' . implode(', ', array_fill(0, count(self::COLUMNS), '?')) . ')',
-            array_merge([$group, $pos], array_map(static fn ($c) => $v[$c], self::COLUMNS)));
+        Db::run('INSERT INTO sections (group_id, user_id, position, ' . implode(', ', self::COLUMNS) . ') VALUES (?, ?, ?, ' . implode(', ', array_fill(0, count(self::COLUMNS), '?')) . ')',
+            array_merge([$group, Ctx::uid(), $pos], array_map(static fn ($c) => $v[$c], self::COLUMNS)));
         return self::out(Db::one('SELECT * FROM sections WHERE id = ?', [Db::insertId()]));
     }
 
     public static function update(int $id, array $in): array
     {
-        $cur = Db::one('SELECT * FROM sections WHERE id = ?', [$id]) ?? throw new HttpError(404, 'Not found');
+        $cur = Db::one('SELECT * FROM sections WHERE id = ? AND user_id = ?', [$id, Ctx::uid()]) ?? throw new HttpError(404, 'Not found');
         $v = self::fields($in, $cur);
         Db::run('UPDATE sections SET ' . implode(' = ?, ', self::COLUMNS) . ' = ? WHERE id = ?',
             array_merge(array_map(static fn ($c) => $v[$c], self::COLUMNS), [$id]));
@@ -168,7 +169,7 @@ final class Sections
     /** Dials of the deleted section move to the first remaining one; the last section of a tab stays. */
     public static function delete(int $id): void
     {
-        $cur = Db::one('SELECT group_id FROM sections WHERE id = ?', [$id]) ?? throw new HttpError(404, 'Not found');
+        $cur = Db::one('SELECT group_id FROM sections WHERE id = ? AND user_id = ?', [$id, Ctx::uid()]) ?? throw new HttpError(404, 'Not found');
         if ((int) Db::one('SELECT COUNT(*) AS c FROM sections WHERE group_id = ?', [$cur['group_id']])['c'] <= 1) {
             throw new InvalidArgumentException('Der letzte Abschnitt eines Tabs kann nicht gelöscht werden.');
         }
@@ -181,7 +182,7 @@ final class Sections
     {
         $group = (int) ($in['group_id'] ?? 0);
         foreach (array_values((array) ($in['ids'] ?? [])) as $i => $id) {
-            Db::run('UPDATE sections SET position = ? WHERE id = ? AND group_id = ?', [$i, (int) $id, $group]);
+            Db::run('UPDATE sections SET position = ? WHERE id = ? AND group_id = ? AND user_id = ?', [$i, (int) $id, $group, Ctx::uid()]);
         }
     }
 
@@ -189,7 +190,7 @@ final class Sections
     public static function layout(array $in): void
     {
         $group = (int) ($in['group_id'] ?? 0);
-        if (Db::one('SELECT 1 FROM groups WHERE id = ?', [$group]) === null) {
+        if (Db::one('SELECT 1 FROM groups WHERE id = ? AND user_id = ?', [$group, Ctx::uid()]) === null) {
             throw new InvalidArgumentException('Gruppe unbekannt.');
         }
         $pdo = Db::pdo();
@@ -202,7 +203,7 @@ final class Sections
                 throw new InvalidArgumentException('Abschnitt unbekannt.');
             }
             foreach ((array) ($sec['ids'] ?? []) as $did) {
-                Db::run('UPDATE dials SET group_id = ?, section_id = ?, position = ? WHERE id = ?', [$group, $sid, $pos++, (int) $did]);
+                Db::run('UPDATE dials SET group_id = ?, section_id = ?, position = ? WHERE id = ? AND user_id = ?', [$group, $sid, $pos++, (int) $did, Ctx::uid()]);
             }
         }
         $pdo->commit();

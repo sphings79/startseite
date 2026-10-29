@@ -58,7 +58,7 @@ final class Settings
         foreach (self::SCHEMA as $k => $def) {
             $out[$k] = $def[1];
         }
-        foreach (Db::all('SELECT key, value FROM settings') as $row) {
+        foreach (Ctx::$uid > 0 ? Db::all('SELECT key, value FROM user_settings WHERE user_id = ?', [Ctx::$uid]) : [] as $row) {
             if (isset(self::SCHEMA[$row['key']])) {
                 $v = json_decode($row['value'], true);
                 $out[$row['key']] = self::SCHEMA[$row['key']][0] === 'bg' && is_array($v) ? $v + $out[$row['key']] : $v;
@@ -144,8 +144,8 @@ final class Settings
     public static function set(string $key, mixed $value, bool $raw = false): void
     {
         $v = $raw ? $value : self::normalize($key, $value);
-        Db::run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-            [$key, json_encode($v, JSON_UNESCAPED_UNICODE)]);
+        Db::run('INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?) ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value',
+            [Ctx::uid(), $key, json_encode($v, JSON_UNESCAPED_UNICODE)]);
     }
 
     public static function setBackgroundFile(string $theme, string $file): void

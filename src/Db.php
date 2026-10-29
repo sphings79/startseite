@@ -225,6 +225,70 @@ SQL);
             $pdo->exec('PRAGMA user_version=8');
             $pdo->exec('COMMIT');
         }
+        if ($version < 9) {
+            // Several users: e-mail login, roles, per-user data and settings, one-time tokens (verify, reset), rate limits.
+            // Everything that exists so far goes to the first user, who becomes the admin.
+            $pdo->exec('BEGIN');
+            $pdo->exec(<<<'SQL'
+ALTER TABLE users ADD COLUMN email TEXT;
+ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user';
+ALTER TABLE users ADD COLUMN lang TEXT NOT NULL DEFAULT 'de';
+ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE users ADD COLUMN last_login INTEGER;
+CREATE UNIQUE INDEX idx_users_email ON users(email) WHERE email IS NOT NULL;
+ALTER TABLE groups ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE dials ADD COLUMN user_id INTEGER;
+ALTER TABLE sections ADD COLUMN user_id INTEGER;
+UPDATE users SET role = 'admin' WHERE id = (SELECT MIN(id) FROM users);
+UPDATE groups SET user_id = (SELECT MIN(id) FROM users);
+UPDATE dials SET user_id = (SELECT MIN(id) FROM users);
+UPDATE sections SET user_id = (SELECT MIN(id) FROM users);
+CREATE INDEX idx_groups_user ON groups(user_id, position);
+CREATE INDEX idx_dials_user ON dials(user_id);
+CREATE INDEX idx_sections_user ON sections(user_id);
+CREATE TABLE user_settings (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (user_id, key)
+);
+INSERT INTO user_settings (user_id, key, value) SELECT (SELECT MIN(id) FROM users), key, value FROM settings WHERE (SELECT COUNT(*) FROM users) > 0;
+DELETE FROM settings;
+CREATE TABLE tokens (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    hash TEXT NOT NULL UNIQUE,
+    data TEXT,
+    expires_at INTEGER NOT NULL
+);
+CREATE TABLE rate (
+    kind TEXT NOT NULL,
+    k TEXT NOT NULL,
+    ts INTEGER NOT NULL
+);
+CREATE INDEX idx_rate ON rate(kind, k, ts);
+SQL);
+            $pdo->exec('PRAGMA user_version=9');
+            $pdo->exec('COMMIT');
+            self::moveLegacyBackups((int) ($pdo->query('SELECT MIN(id) FROM users')->fetchColumn() ?: 0));
+        }
+    }
+
+    /** Backups used to sit in one folder; they now live in backups/u<id>/ and belong to the first user. */
+    private static function moveLegacyBackups(int $firstUser): void
+    {
+        $dir = (string) Config::get('data_dir') . '/backups';
+        if ($firstUser < 1 || !is_dir($dir)) {
+            return;
+        }
+        $files = glob($dir . '/startseite-*.zip') ?: [];
+        if ($files && !is_dir($dir . '/u' . $firstUser)) {
+            @mkdir($dir . '/u' . $firstUser, 0750, true);
+        }
+        foreach ($files as $f) {
+            @rename($f, $dir . '/u' . $firstUser . '/' . basename($f));
+        }
     }
 
     /** @return list<array<string,mixed>> */

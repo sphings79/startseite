@@ -150,7 +150,7 @@ final class LinkCheck
     {
         $settings = Settings::all();
         $sql = 'SELECT d.*, g.no_check AS group_no_check FROM dials d JOIN groups g ON g.id = d.group_id'
-            . ($onlyDial !== null ? ' WHERE d.id = ' . (int) $onlyDial : '');
+            . ' WHERE d.user_id = ' . Ctx::uid() . ($onlyDial !== null ? ' AND d.id = ' . (int) $onlyDial : '');
         foreach (Db::all($sql) as $d) {
             $reason = self::exclusionReason($d, (bool) $d['group_no_check'], $settings);
             if ($reason !== null) {
@@ -173,16 +173,24 @@ final class LinkCheck
         if ($d !== null) {
             return [$d, true];
         }
-        $days = (int) Settings::get('check_interval_days');
-        if ($days <= 0) {
-            return null;
+        // Every user chooses the interval for their own bookmarks.
+        foreach (Db::all("SELECT id FROM users WHERE status = 'active' ORDER BY id") as $u) {
+            $found = Ctx::as((int) $u['id'], static function () {
+                $days = (int) Settings::get('check_interval_days');
+                if ($days <= 0) {
+                    return null;
+                }
+                $now = time();
+                return Db::one("SELECT * FROM dials WHERE user_id = ? AND check_req = 0
+                                AND (check_at IS NULL OR (check_status = 'suspect' AND check_at < ?) OR check_at < ?)
+                                ORDER BY check_at IS NOT NULL, check_at LIMIT 1",
+                    [Ctx::uid(), $now - self::RETRY_AFTER, $now - $days * 86400]);
+            });
+            if ($found !== null) {
+                return [$found, false];
+            }
         }
-        $now = time();
-        $d = Db::one("SELECT * FROM dials WHERE check_req = 0
-                      AND (check_at IS NULL OR (check_status = 'suspect' AND check_at < ?) OR check_at < ?)
-                      ORDER BY check_at IS NOT NULL, check_at LIMIT 1",
-            [$now - self::RETRY_AFTER, $now - $days * 86400]);
-        return $d === null ? null : [$d, false];
+        return null;
     }
 
     // ---------- the check itself ----------

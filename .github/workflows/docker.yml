@@ -36,7 +36,7 @@ jobs:
       - name: Start container
         run: |
           docker run -d --name startseite -p 8080:80 \
-            -e STARTSEITE_USER=admin -e STARTSEITE_PASSWORD=ci-test-password-12345 \
+            -e STARTSEITE_ADMIN_EMAIL=admin@example.org -e STARTSEITE_PASSWORD='ci-Test-password-12345!' \
             startseite:test
           for i in $(seq 1 40); do
             [ "$(docker inspect -f '{{.State.Health.Status}}' startseite)" = "healthy" ] && exit 0
@@ -52,7 +52,7 @@ jobs:
           jar=$(mktemp)
           token=$(curl -fsS -c "$jar" -b "$jar" http://127.0.0.1:8080/login | sed -n 's/.*name="token" value="\([^"]*\)".*/\1/p')
           code=$(curl -s -o /dev/null -w '%{http_code}' -c "$jar" -b "$jar" -H 'Origin: http://127.0.0.1:8080' \
-            --data-urlencode "token=$token" -d 'username=admin&password=ci-test-password-12345&next=/' http://127.0.0.1:8080/login)
+            --data-urlencode "token=$token" --data-urlencode 'username=admin@example.org' --data-urlencode 'password=ci-Test-password-12345!' -d 'next=/' http://127.0.0.1:8080/login)
           test "$code" = "303"
           curl -fsS -b "$jar" http://127.0.0.1:8080/api/state | grep -q '"sections"'
       - name: Container logs

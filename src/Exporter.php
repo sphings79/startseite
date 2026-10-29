@@ -13,7 +13,7 @@ final class Exporter
     {
         Sections::repair();
         $dials = Db::all('SELECT group_id, section_id, position, title, url, thumb_mode, thumb_src, thumb_file, thumb_kind, fit, visits, last_visit, created_at, no_check, tags, note, color, badge, badge_color, keep
-                          FROM dials ORDER BY group_id, position, id');
+                          FROM dials WHERE user_id = ? ORDER BY group_id, position, id', [Ctx::uid()]);
         foreach ($dials as &$d) {
             $d['tags'] = json_decode((string) $d['tags'], true) ?: [];
         }
@@ -22,8 +22,8 @@ final class Exporter
             'format'      => self::FORMAT,
             'version'     => 2,
             'exported_at' => time(),
-            'groups'      => Db::all('SELECT id, title, position, no_check FROM groups ORDER BY position, id'),
-            'sections'    => Db::all('SELECT id, group_id, position, title, title_center, collapsed, width, mode, cols, tile_cols, tile_size, ratio, bg_color, bg_opacity, border_color, border_width, radius, padding FROM sections ORDER BY group_id, position, id'),
+            'groups'      => Db::all('SELECT id, title, position, no_check FROM groups WHERE user_id = ? ORDER BY position, id', [Ctx::uid()]),
+            'sections'    => Db::all('SELECT id, group_id, position, title, title_center, collapsed, width, mode, cols, tile_cols, tile_size, ratio, bg_color, bg_opacity, border_color, border_width, radius, padding FROM sections WHERE user_id = ? ORDER BY group_id, position, id', [Ctx::uid()]),
             'dials'       => $dials,
             'settings'    => Settings::all(),
         ];

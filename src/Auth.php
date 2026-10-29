@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Single-user authentication (OWASP ASVS / Authentication, Session Management, Password Storage cheat sheets):
+ * Authentication (OWASP ASVS / Authentication, Session Management, Password Storage cheat sheets):
  *  - Argon2id password hashes, transparent rehash
  *  - server-side sessions: random selector + validator, only SHA-256(validator) is stored
  *  - persistent cookie (HttpOnly, SameSite=Lax, Secure over HTTPS), sliding expiry
@@ -69,13 +69,14 @@ final class Auth
         return (int) Db::one('SELECT COUNT(*) AS c FROM users')['c'];
     }
 
+    /** At least 12 characters with a letter, a digit and a special character. */
     public static function validatePassword(string $password): ?string
     {
-        if (mb_strlen($password) < self::MIN_PASSWORD_LENGTH) {
-            return 'Das Passwort braucht mindestens ' . self::MIN_PASSWORD_LENGTH . ' Zeichen.';
-        }
         if (mb_strlen($password) > 256) {
             return 'Das Passwort ist zu lang.';
+        }
+        if (mb_strlen($password) < self::MIN_PASSWORD_LENGTH || !preg_match('/\p{L}/u', $password) || !preg_match('/\d/', $password) || !preg_match('/[^\p{L}\d]/u', $password)) {
+            return 'Das Passwort braucht mindestens ' . self::MIN_PASSWORD_LENGTH . ' Zeichen mit Buchstaben, einer Zahl und einem Sonderzeichen.';
         }
         return null;
     }
@@ -85,24 +86,29 @@ final class Auth
         return password_hash($password, PASSWORD_ARGON2ID);
     }
 
-    /** Creates the single user or updates it. Invalidates all sessions. */
-    public static function setUser(string $username, string $password): void
+    /**
+     * Command line and first start: creates the user with this address (as admin when it is the first one) or sets a new
+     * password for an existing one. An old installation's first user, who has no address yet, gets this one.
+     */
+    public static function setUser(string $login, string $password, ?string $role = null): int
     {
         if (($err = self::validatePassword($password)) !== null) {
             throw new InvalidArgumentException($err);
         }
-        $username = trim($username);
-        if ($username === '' || mb_strlen($username) > 64) {
-            throw new InvalidArgumentException('Ungültiger Benutzername.');
-        }
+        $email = Accounts::normalizeEmail($login);
         $hash = self::hash($password);
-        $existing = Db::one('SELECT id FROM users ORDER BY id LIMIT 1');
-        if ($existing) {
-            Db::run('UPDATE users SET username = ?, password_hash = ? WHERE id = ?', [$username, $hash, $existing['id']]);
-        } else {
-            Db::run('INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)', [$username, $hash, time()]);
+        $existing = Db::one('SELECT * FROM users WHERE email = ?', [$email]);
+        if (!$existing && Auth::userCount() > 0) {
+            $existing = Db::one('SELECT * FROM users WHERE email IS NULL ORDER BY id LIMIT 1');
         }
-        Db::run('DELETE FROM sessions');
+        if ($existing) {
+            Db::run("UPDATE users SET email = ?, username = ?, password_hash = ?, status = 'active' WHERE id = ?", [$email, $email, $hash, $existing['id']]);
+            Db::run('DELETE FROM sessions WHERE user_id = ?', [$existing['id']]);
+            return (int) $existing['id'];
+        }
+        $first = self::userCount() === 0;
+        Db::run("INSERT INTO users (username, email, password_hash, role, status, created_at) VALUES (?, ?, ?, ?, 'active', ?)", [$email, $email, $hash, $role ?? ($first ? 'admin' : 'user'), time()]);
+        return Db::insertId();
     }
 
     // ---------- login ----------
@@ -138,7 +144,8 @@ final class Auth
             return ['ok' => false, 'retry_after' => $wait];
         }
 
-        $user = Db::one('SELECT * FROM users WHERE username = ?', [trim($username)]);
+        $login = trim($username);
+        $user = Db::one("SELECT * FROM users WHERE status = 'active' AND (email = ? OR username = ?)", [strtolower($login), $login]);
         // Always run one verification so timing does not reveal whether the user exists.
         static $dummy = null;
         $dummy ??= self::hash(bin2hex(random_bytes(8)));
@@ -165,6 +172,7 @@ final class Auth
     {
         // Fresh session identifier on every login (session fixation).
         self::destroyCurrent();
+        Db::run('UPDATE users SET last_login = ? WHERE id = ?', [time(), $userId]);
         self::create($userId);
     }
 
@@ -212,7 +220,7 @@ final class Auth
             return null;
         }
         $row = Db::one(
-            'SELECT s.*, u.username FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.selector = ?',
+            "SELECT s.*, u.username, u.email, u.role, u.lang FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.selector = ? AND u.status = 'active'",
             [$parts[0]]
         );
         if (!$row || !hash_equals($row['validator_hash'], hash('sha256', $parts[1])) || $row['expires_at'] < time()) {
@@ -229,6 +237,7 @@ final class Auth
             setcookie(self::COOKIE, $cookie, self::cookieOptions($expires));
             Db::run('DELETE FROM sessions WHERE expires_at < ?', [time()]);
         }
+        Ctx::$uid = (int) $row['user_id'];
         return self::$session = $row;
     }
 
@@ -251,7 +260,7 @@ final class Auth
 
     public static function logoutOthers(int $keepSessionId): void
     {
-        Db::run('DELETE FROM sessions WHERE id != ?', [$keepSessionId]);
+        Db::run('DELETE FROM sessions WHERE id != ? AND user_id = (SELECT user_id FROM sessions WHERE id = ?)', [$keepSessionId, $keepSessionId]);
     }
 
     public static function changePassword(array $session, string $current, string $new): ?string
@@ -264,21 +273,6 @@ final class Auth
             return $err;
         }
         Db::run('UPDATE users SET password_hash = ? WHERE id = ?', [self::hash($new), $user['id']]);
-        self::logoutOthers((int) $session['id']);
-        return null;
-    }
-
-    public static function changeUsername(array $session, string $current, string $username): ?string
-    {
-        $user = Db::one('SELECT * FROM users WHERE id = ?', [$session['user_id']]);
-        if (!$user || !password_verify($current, $user['password_hash'])) {
-            return 'Das aktuelle Passwort ist falsch.';
-        }
-        $username = trim($username);
-        if ($username === '' || mb_strlen($username) > 64 || preg_match('/[\x00-\x1f\x7f]/', $username)) {
-            return 'Ungültiger Benutzername (1 bis 64 Zeichen, keine Steuerzeichen).';
-        }
-        Db::run('UPDATE users SET username = ? WHERE id = ?', [$username, $user['id']]);
         self::logoutOthers((int) $session['id']);
         return null;
     }

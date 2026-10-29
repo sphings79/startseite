@@ -32,10 +32,12 @@ Db::run('UPDATE dials SET check_req = 1 WHERE check_req = 2');
 
 while ($running) {
     $dial = Db::one("SELECT * FROM dials WHERE thumb_status = 'pending' ORDER BY id LIMIT 1");
+    Ctx::$uid = (int) ($dial['user_id'] ?? 0);
     if ($dial === null) {
         $job = LinkCheck::next();
         if ($job !== null) {
             [$d, $manual] = $job;
+            Ctx::$uid = (int) $d['user_id'];
             Db::run('UPDATE dials SET check_req = 2 WHERE id = ?', [$d['id']]);
             fwrite(STDOUT, date('H:i:s') . " check #{$d['id']} {$d['url']} ... ");
             try {
@@ -48,16 +50,23 @@ while ($running) {
             }
             continue;
         }
-        if (Backup::due() && time() - $lastBackupTry > 600) {
+        if (time() - $lastBackupTry > 600) {
             $lastBackupTry = time();
-            try {
-                fwrite(STDOUT, date('H:i:s') . ' backup ' . Backup::create() . "\n");
-            } catch (Throwable $e) {
-                fwrite(STDOUT, date('H:i:s') . ' backup failed: ' . $e->getMessage() . "\n");
+            foreach (Db::all("SELECT id FROM users WHERE status = 'active' ORDER BY id") as $u) {
+                Ctx::$uid = (int) $u['id'];
+                if (!Backup::due()) {
+                    continue;
+                }
+                try {
+                    fwrite(STDOUT, date('H:i:s') . " backup user {$u['id']} " . Backup::create() . "\n");
+                } catch (Throwable $e) {
+                    fwrite(STDOUT, date('H:i:s') . " backup user {$u['id']} failed: " . $e->getMessage() . "\n");
+                }
             }
         }
         $meta = PageMeta::next();
         if ($meta !== null) {
+            Ctx::$uid = (int) $meta['user_id'];
             PageMeta::refresh($meta);
             continue;
         }

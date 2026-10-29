@@ -3,7 +3,7 @@ set -e
 
 chown www-data:www-data "$STARTSEITE_DATA_DIR"
 
-# Create the user on first start from STARTSEITE_USER / STARTSEITE_PASSWORD (ignored once a user exists).
+# Create the user on first start from STARTSEITE_ADMIN_EMAIL / STARTSEITE_PASSWORD (ignored once a user exists).
 runuser -u www-data -- php /app/bin/set_password.php --from-env
 
 # Thumbnail worker, restarted if it ever exits.

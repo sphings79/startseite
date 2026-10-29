@@ -20,6 +20,18 @@ final class Api
 
         $m = [];
         try {
+            Ctx::$uid = (int) $session['user_id'];
+            // Rows addressed by id must belong to the signed-in user; anything else looks like it does not exist.
+            if (preg_match('#^/api/(dials|groups|sections)/(\d+)#', $path, $own)
+                && Db::one('SELECT 1 FROM ' . $own[1] . ' WHERE id = ? AND user_id = ?', [(int) $own[2], Ctx::$uid]) === null) {
+                throw new HttpError(404, 'Not found');
+            }
+            if (str_starts_with($path, '/api/admin/')) {
+                if (!Accounts::isAdmin($session)) {
+                    throw new HttpError(403, 'Forbidden');
+                }
+                AdminApi::dispatch($method, $path, $session);
+            }
             switch (true) {
                 case $method === 'GET' && $path === '/api/state':
                     Http::json(self::state($session));
@@ -126,10 +138,18 @@ final class Api
                     $b = Http::body();
                     $err = Auth::changePassword($session, (string) ($b['current'] ?? ''), (string) ($b['new'] ?? ''));
                     Http::json($err === null ? ['ok' => true] : ['error' => $err], $err === null ? 200 : 422);
-                case $method === 'POST' && $path === '/api/username':
+                case $method === 'POST' && $path === '/api/email':
                     $b = Http::body();
-                    $err = Auth::changeUsername($session, (string) ($b['current'] ?? ''), (string) ($b['username'] ?? ''));
-                    Http::json($err === null ? ['ok' => true, 'username' => trim((string) $b['username'])] : ['error' => $err], $err === null ? 200 : 422);
+                    try {
+                        Accounts::requestEmailChange($session, (string) ($b['current'] ?? ''), (string) ($b['email'] ?? ''));
+                    } catch (RuntimeException $e) {
+                        throw new InvalidArgumentException('Die Mail konnte nicht gesendet werden: ' . $e->getMessage());
+                    }
+                    Http::json(['ok' => true]);
+                case $method === 'POST' && $path === '/api/language':
+                    $lang = Accounts::lang((string) (Http::body()['lang'] ?? ''));
+                    Db::run('UPDATE users SET lang = ? WHERE id = ?', [$lang, $session['user_id']]);
+                    Http::json(['ok' => true, 'lang' => $lang]);
                 case $method === 'POST' && $path === '/api/logout':
                     Auth::logout();
                     Http::json(['ok' => true]);
@@ -202,8 +222,9 @@ final class Api
 
     public static function state(array $session): array
     {
-        if (Db::one('SELECT 1 FROM groups LIMIT 1') === null) {
-            Db::run("INSERT INTO groups (title, position) VALUES ('Allgemein', 0)"); // a fresh install needs somewhere to put bookmarks
+        Ctx::$uid = (int) $session['user_id'];
+        if (Db::one('SELECT 1 FROM groups WHERE user_id = ? LIMIT 1', [Ctx::$uid]) === null) {
+            Db::run("INSERT INTO groups (user_id, title, position) VALUES (?, 'Allgemein', 0)", [Ctx::$uid]); // a new user needs somewhere to put bookmarks
         }
         Sections::repair();
         $settings = Settings::all();
@@ -213,12 +234,14 @@ final class Api
         return [
             'base'     => Http::basePath(),
             'csrf'     => $session['csrf'],
-            'username' => $session['username'],
+            'username' => $session['email'] ?: $session['username'],
+            'user'     => ['id' => (int) $session['user_id'], 'email' => $session['email'] ?: $session['username'], 'role' => $session['role'], 'lang' => $session['lang']],
+            'mail'     => Mail::configured(),
             'settings' => $settings,
             'groups'   => array_map(static fn ($g) => ['id' => (int) $g['id'], 'title' => $g['title'], 'position' => (int) $g['position'], 'no_check' => (bool) $g['no_check']],
-                Db::all('SELECT * FROM groups ORDER BY position, id')),
+                Db::all('SELECT * FROM groups WHERE user_id = ? ORDER BY position, id', [Ctx::$uid])),
             'sections' => Sections::all(),
-            'dials'    => array_map([self::class, 'dialOut'], Db::all('SELECT * FROM dials ORDER BY position, id')),
+            'dials'    => array_map([self::class, 'dialOut'], Db::all('SELECT * FROM dials WHERE user_id = ? ORDER BY position, id', [Ctx::$uid])),
             'jobs'     => self::jobs(),
             'screenshots' => Thumbs::chromiumBinary() !== null,
         ];
@@ -244,7 +267,7 @@ final class Api
         $norm = static fn (string $u): string => rtrim((string) preg_replace('#^https?://(www\.)?#i', '', strtolower($u)), '/');
         $existing = null;
         if ($url !== '') {
-            foreach (Db::all('SELECT d.url, g.title AS gtitle FROM dials d JOIN groups g ON g.id = d.group_id') as $d) {
+            foreach (Db::all('SELECT d.url, g.title AS gtitle FROM dials d JOIN groups g ON g.id = d.group_id WHERE d.user_id = ?', [Ctx::uid()]) as $d) {
                 if ($norm($d['url']) === $norm($url)) {
                     $existing = $d['gtitle'];
                     break;
@@ -258,7 +281,7 @@ final class Api
             'title'    => $title,
             'existing' => $existing,
             'popup'    => !empty($_GET['popup']),
-            'groups'   => array_map(static fn ($g) => ['id' => (int) $g['id'], 'title' => $g['title']], Db::all('SELECT id, title FROM groups ORDER BY position, id')),
+            'groups'   => array_map(static fn ($g) => ['id' => (int) $g['id'], 'title' => $g['title']], Db::all('SELECT id, title FROM groups WHERE user_id = ? ORDER BY position, id', [Ctx::uid()])),
             'app_name' => (string) Settings::get('app_name'),
         ];
     }
@@ -286,8 +309,8 @@ final class Api
 
     private static function jobs(): array
     {
-        $out = ['pending' => 0, 'running' => 0, 'failed' => 0, 'checks' => (int) Db::one('SELECT COUNT(*) AS c FROM dials WHERE check_req > 0')['c']];
-        foreach (Db::all("SELECT thumb_status AS s, COUNT(*) AS c FROM dials WHERE thumb_status IN ('pending','running','failed') GROUP BY thumb_status") as $r) {
+        $out = ['pending' => 0, 'running' => 0, 'failed' => 0, 'checks' => (int) Db::one('SELECT COUNT(*) AS c FROM dials WHERE user_id = ? AND check_req > 0', [Ctx::uid()])['c']];
+        foreach (Db::all("SELECT thumb_status AS s, COUNT(*) AS c FROM dials WHERE user_id = ? AND thumb_status IN ('pending','running','failed') GROUP BY thumb_status", [Ctx::uid()]) as $r) {
             $out[$r['s']] = (int) $r['c'];
         }
         return $out;
@@ -361,7 +384,7 @@ final class Api
 
     private static function groupExists(int $id): bool
     {
-        return Db::one('SELECT 1 FROM groups WHERE id = ?', [$id]) !== null;
+        return Db::one('SELECT 1 FROM groups WHERE id = ? AND user_id = ?', [$id, Ctx::uid()]) !== null;
     }
 
     // ---------- groups ----------
@@ -369,8 +392,8 @@ final class Api
     private static function groupCreate(array $in): array
     {
         $title = self::title($in['title'] ?? '', 80);
-        $pos = (int) (Db::one('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM groups')['p']);
-        Db::run('INSERT INTO groups (title, position) VALUES (?, ?)', [$title, $pos]);
+        $pos = (int) (Db::one('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM groups WHERE user_id = ?', [Ctx::uid()])['p']);
+        Db::run('INSERT INTO groups (user_id, title, position) VALUES (?, ?, ?)', [Ctx::uid(), $title, $pos]);
         $id = Db::insertId();
         Sections::defaultId($id);
         return ['id' => $id, 'title' => $title, 'position' => $pos];
@@ -391,14 +414,14 @@ final class Api
     private static function groupOrder(array $in): never
     {
         foreach (array_values((array) ($in['ids'] ?? [])) as $i => $id) {
-            Db::run('UPDATE groups SET position = ? WHERE id = ?', [$i, (int) $id]);
+            Db::run('UPDATE groups SET position = ? WHERE id = ? AND user_id = ?', [$i, (int) $id, Ctx::uid()]);
         }
         Http::json(['ok' => true]);
     }
 
     private static function groupDelete(int $id): never
     {
-        if ((int) Db::one('SELECT COUNT(*) AS c FROM groups')['c'] <= 1) {
+        if ((int) Db::one('SELECT COUNT(*) AS c FROM groups WHERE user_id = ?', [Ctx::uid()])['c'] <= 1) {
             throw new InvalidArgumentException('Die letzte Gruppe kann nicht gelöscht werden.');
         }
         foreach (Db::all('SELECT thumb_file, thumb_orig FROM dials WHERE group_id = ?', [$id]) as $d) {
@@ -429,8 +452,8 @@ final class Api
         $pos = (int) Db::one('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM dials WHERE group_id = ?', [$group])['p'];
         $x = self::extras($in, null);
         $section = isset($in['section_id']) && Sections::belongs((int) $in['section_id'], $group) ? (int) $in['section_id'] : Sections::defaultId($group);
-        Db::run('INSERT INTO dials (group_id, section_id, position, title, url, thumb_mode, thumb_src, fit, thumb_status, created_at, tags, note, color, badge, badge_color) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-            [$group, $section, $pos, $title, $url, $mode, $src, $fit, $status, time(), $x['tags'], $x['note'], $x['color'], $x['badge'], $x['badge_color']]);
+        Db::run('INSERT INTO dials (user_id, group_id, section_id, position, title, url, thumb_mode, thumb_src, fit, thumb_status, created_at, tags, note, color, badge, badge_color) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+            [Ctx::uid(), $group, $section, $pos, $title, $url, $mode, $src, $fit, $status, time(), $x['tags'], $x['note'], $x['color'], $x['badge'], $x['badge_color']]);
         return self::dialOut(Db::one('SELECT * FROM dials WHERE id = ?', [Db::insertId()]));
     }
 
@@ -499,10 +522,10 @@ final class Api
     private static function dialBulkDelete(array $in): never
     {
         foreach ((array) ($in['ids'] ?? []) as $id) {
-            $cur = Db::one('SELECT thumb_file, thumb_orig FROM dials WHERE id = ?', [(int) $id]);
+            $cur = Db::one('SELECT thumb_file, thumb_orig FROM dials WHERE id = ? AND user_id = ?', [(int) $id, Ctx::uid()]);
             if ($cur) {
                 Thumbs::dropFiles($cur);
-                Db::run('DELETE FROM dials WHERE id = ?', [(int) $id]);
+                Db::run('DELETE FROM dials WHERE id = ? AND user_id = ?', [(int) $id, Ctx::uid()]);
             }
         }
         Http::json(['ok' => true]);
@@ -548,7 +571,7 @@ final class Api
     private static function dialKeep(array $in): never
     {
         foreach (array_slice((array) ($in['ids'] ?? []), 0, 2000) as $id) {
-            Db::run('UPDATE dials SET keep = ? WHERE id = ?', [empty($in['keep']) ? 0 : 1, (int) $id]);
+            Db::run('UPDATE dials SET keep = ? WHERE id = ? AND user_id = ?', [empty($in['keep']) ? 0 : 1, (int) $id, Ctx::uid()]);
         }
         Http::json(['ok' => true]);
     }
@@ -563,8 +586,8 @@ final class Api
         $pdo->beginTransaction();
         $default = Sections::defaultId($group);
         foreach (array_values((array) ($in['ids'] ?? [])) as $i => $id) {
-            Db::run('UPDATE dials SET group_id = ?, position = ?, section_id = CASE WHEN section_id IN (SELECT id FROM sections WHERE group_id = ?) THEN section_id ELSE ? END WHERE id = ?',
-                [$group, $i, $group, $default, (int) $id]);
+            Db::run('UPDATE dials SET group_id = ?, position = ?, section_id = CASE WHEN section_id IN (SELECT id FROM sections WHERE group_id = ?) THEN section_id ELSE ? END WHERE id = ? AND user_id = ?',
+                [$group, $i, $group, $default, (int) $id, Ctx::uid()]);
         }
         $pdo->commit();
         Http::json(['ok' => true]);
@@ -583,17 +606,17 @@ final class Api
         if (isset($in['ids'])) {
             $n = 0;
             foreach (array_slice((array) $in['ids'], 0, 2000) as $id) {
-                $n += Db::run("UPDATE dials SET check_req = 1 WHERE id = ? AND check_req = 0", [(int) $id]);
+                $n += Db::run("UPDATE dials SET check_req = 1 WHERE id = ? AND user_id = ? AND check_req = 0", [(int) $id, Ctx::uid()]);
             }
             return $n;
         }
-        return Db::run('UPDATE dials SET check_req = 1 WHERE check_req = 0');
+        return Db::run('UPDATE dials SET check_req = 1 WHERE user_id = ? AND check_req = 0', [Ctx::uid()]);
     }
 
     private static function queueMissing(): int
     {
         return Db::run("UPDATE dials SET thumb_status = 'pending', thumb_attempts = 0
-                        WHERE thumb_file IS NULL AND thumb_mode IN ('auto','screenshot','url') AND thumb_status IN ('none','failed')");
+                        WHERE user_id = ? AND thumb_file IS NULL AND thumb_mode IN ('auto','screenshot','url') AND thumb_status IN ('none','failed')", [Ctx::uid()]);
     }
 
     private static function uploadedBytes(): string
@@ -653,7 +676,14 @@ final class Api
             throw new HttpError(404, 'Not found');
         }
         $file = Db::mediaDir() . '/' . $name;
-        if (!is_file($file)) {
+        // A file is only served to the user it belongs to: a bookmark's image, its uncropped original or one of the two backgrounds.
+        $mine = Db::one('SELECT 1 FROM dials WHERE user_id = ? AND (thumb_file = ? OR thumb_orig = ?) LIMIT 1', [Ctx::uid(), $name, $name]);
+        if (!$mine) {
+            foreach (['bg_light', 'bg_dark'] as $k) {
+                $mine = $mine || (Settings::get($k)['file'] ?? '') === $name;
+            }
+        }
+        if (!$mine || !is_file($file)) {
             throw new HttpError(404, 'Not found');
         }
         header('Content-Type: ' . ['webp' => 'image/webp', 'png' => 'image/png', 'jpg' => 'image/jpeg', 'svg' => 'image/svg+xml'][$m[1]]);

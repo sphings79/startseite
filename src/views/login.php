@@ -1,5 +1,5 @@
 <?php
-/** @var string $error @var string $username @var string $token @var string $appName @var bool $noUser @var string $next */
+/** @var string $error @var string $username @var string $token @var string $appName @var bool $noUser @var bool $regOpen @var string $next */
 $e = static fn (string $s): string => htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 $base = Http::basePath();
 $ver = static fn (string $f): string => (string) (@filemtime(WEB_ROOT . '/assets/' . $f) ?: APP_VERSION);
@@ -19,7 +19,7 @@ $ver = static fn (string $f): string => (string) (@filemtime(WEB_ROOT . '/assets
 <main class="login-card">
     <h1><?= $e($appName) ?></h1>
     <?php if ($noUser): ?>
-        <p class="login-error">Noch kein Benutzer angelegt. Auf dem Server ausführen: <code>php bin/set_password.php</code></p>
+        <p class="login-error">Noch kein Benutzer angelegt. Auf dem Server ausführen: <code>php bin/admin.php create</code></p>
     <?php endif; ?>
     <?php if ($error !== ''): ?>
         <p class="login-error" role="alert"><?= $e($error) ?></p>
@@ -27,7 +27,7 @@ $ver = static fn (string $f): string => (string) (@filemtime(WEB_ROOT . '/assets
     <form method="post" action="<?= $e($base) ?>/login" autocomplete="on">
         <input type="hidden" name="token" value="<?= $e($token) ?>">
         <input type="hidden" name="next" value="<?= $e($next) ?>">
-        <label>Benutzername
+        <label>E-Mail-Adresse
             <input type="text" name="username" value="<?= $e($username) ?>" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
         </label>
         <label>Passwort
@@ -35,6 +35,7 @@ $ver = static fn (string $f): string => (string) (@filemtime(WEB_ROOT . '/assets
         </label>
         <button type="submit">Anmelden</button>
     </form>
+    <p class="msg acct-links"><a href="<?= $e($base) ?>/forgot">Passwort vergessen?</a><?php if ($regOpen): ?> · <a href="<?= $e($base) ?>/register">Registrieren</a><?php endif; ?></p>
     <p class="login-error" id="passkey-error" role="alert" hidden></p>
     <button type="button" id="passkey-btn" class="alt" hidden data-base="<?= $e($base) ?>" data-next="<?= $e($next) ?>">Mit Passkey anmelden</button>
 </main>

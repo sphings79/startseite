@@ -84,13 +84,13 @@ as_user "$PHP" -r 'require $argv[1]."/src/bootstrap.php"; Db::pdo(); echo "ok\n"
 USERS=$(as_user "$PHP" -r 'require $argv[1]."/src/bootstrap.php"; echo Auth::userCount();' "$APP_DIR")
 if [ "$USERS" = "0" ]; then
     if [ "$PW_STDIN" = "1" ]; then
-        as_user "$PHP" "$APP_DIR/bin/set_password.php" admin
+        as_user "$PHP" "$APP_DIR/bin/set_password.php" "${ADMIN_EMAIL:-admin@example.org}"
     elif [ -t 0 ]; then
-        echo "==> Create the login (user 'admin' unless you pass another name)"
-        printf "Username [admin]: "; read -r U; U=${U:-admin}
+        echo "==> Create the first account (the admin); you sign in with its e-mail address"
+        printf "E-mail address: "; read -r U
         as_user "$PHP" "$APP_DIR/bin/set_password.php" "$U"
     else
-        echo "No user yet. Create one with:  $PHP $APP_DIR/bin/set_password.php admin"
+        echo "No user yet. Create one with:  $PHP $APP_DIR/bin/admin.php create you@example.org --role=admin"
     fi
 fi
 

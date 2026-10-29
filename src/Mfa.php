@@ -43,14 +43,14 @@ final class Mfa
 
     // ---------- sealing (TOTP secrets are not stored in the clear) ----------
 
-    private static function seal(string $plain): string
+    public static function seal(string $plain): string
     {
         $key = Auth::derivedKey('mfa-seal');
         $nonce = random_bytes(SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
         return base64_encode($nonce . sodium_crypto_secretbox($plain, $nonce, $key));
     }
 
-    private static function unseal(string $sealed): string
+    public static function unseal(string $sealed): string
     {
         $raw = base64_decode($sealed, true) ?: '';
         $plain = strlen($raw) > SODIUM_CRYPTO_SECRETBOX_NONCEBYTES

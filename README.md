@@ -58,7 +58,7 @@ If you used the **Speed Dial 2** browser extension, you can import its export. C
 
 ```bash
 docker run -d --name startseite -p 8080:80 \
-  -e STARTSEITE_USER=admin -e STARTSEITE_PASSWORD='choose-a-long-password' \
+  -e STARTSEITE_ADMIN_EMAIL=you@example.org -e STARTSEITE_PASSWORD='Choose-a-long-passw0rd' \
   -v startseite-data:/data \
   ghcr.io/sphings79/startseite:latest
 ```
@@ -73,7 +73,7 @@ With Docker Compose (builds the image if you do not pull it):
 docker compose up -d --build
 ```
 
-Edit `STARTSEITE_USER` and `STARTSEITE_PASSWORD` (at least 12 characters) in `docker-compose.yml` first. Your data lives in the `startseite-data` volume.
+Edit `STARTSEITE_ADMIN_EMAIL` and `STARTSEITE_PASSWORD` (at least 12 characters with letters, a digit and a special character) in `docker-compose.yml` first. Your data lives in the `startseite-data` volume.
 
 ## Install without Docker
 
@@ -137,6 +137,28 @@ The uncropped original stays on the server but is not part of backups: after a r
 
 The worker writes ZIP backups to `DATA_DIR/backups/` at the interval you choose. Restore through Settings → System → Import. On the command line: `php bin/import.php export.json [--merge]`.
 
+### Several users
+
+Everybody signs in with an **e-mail address**. The first account is the **admin**. Every user has an entirely separate start page (tabs, bookmarks, images, settings, backups); the admin sees and manages accounts, never anybody's bookmarks.
+
+- **Registration:** Settings → Benutzer (admins only). Choose *nobody*, *only approved addresses and domains* (one domain such as `example.org` or one address per line) or *anybody*. Every new account has to confirm its address through a link in a mail.
+- **Forgot password:** "Passwort vergessen?" on the sign-in page sends a one-hour, single-use link. The answer looks the same for unknown addresses. A reset ends all sessions of that user.
+- **Admin tools:** invite people (they choose their password via a link), send a reset mail, remove a lost second factor, lock, make admin, delete a user with all data, make a backup of one user and **restore a backup for one user only**.
+- **Mail (SMTP):** host, port, encryption (none, STARTTLS or SSL/TLS), optional login, sender and a test button. An internal relay without login and encryption works, so do external servers with TLS and a password. The password is stored encrypted. Mails go out in German or English (the user's choice).
+- **Passwords** need at least 12 characters with letters, a digit and a special character.
+- **No mail yet or locked out?** Everything is possible on the command line as well:
+
+```bash
+php bin/admin.php list
+php bin/admin.php create you@example.org --role=admin
+php bin/admin.php password you@example.org
+php bin/admin.php registration domains example.org example.net
+php bin/admin.php url https://start.example.org       # base URL for links in mails
+# Docker: docker compose exec -u www-data startseite php /app/bin/admin.php list
+```
+
+**Upgrading from a single-user version:** your account and all data stay and become the admin's. Give it an address once with `php bin/admin.php claim you@example.org` (the password stays), then sign in with that address. `STARTSEITE_USER` is replaced by `STARTSEITE_ADMIN_EMAIL`.
+
 ### Securing the login (optional)
 
 Settings → Sicherheit. Without extras, the password is enough, which is fine on a home network.
@@ -176,7 +198,7 @@ GitHub Actions run the tests on PHP 8.2, 8.3 and 8.4, build the Docker image, sm
 **Is there a hosted version?** No. You run it yourself.
 **Can I use it as my browser's home page or new tab page?** Yes. Set the browser's home page to your Startseite URL. A new-tab extension that opens a URL does the same.
 **Does it phone home?** No. The only outside requests are the ones you trigger: fetching a bookmark's logo or page, link checks, and the icon sources listed above.
-**Is there more than one user?** No, one user by design.
+**Is there more than one user?** Yes. Every user has their own tabs, bookmarks, settings and backups, the admin manages the accounts (see "Several users").
 **Other languages?** The interface is German for now.
 
 ## Support the project

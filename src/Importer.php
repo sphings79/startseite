@@ -108,7 +108,7 @@ final class Importer
             }
             $norm = static fn (string $u): string => rtrim((string) preg_replace('#^https?://(www\.)?#i', '', strtolower($u)), '/');
             $seen = [];
-            foreach (Db::all('SELECT url FROM dials') as $d) {
+            foreach (Db::all('SELECT url FROM dials WHERE user_id = ?', [Ctx::uid()]) as $d) {
                 $seen[$norm($d['url'])] = true;
             }
             $groups = [];
@@ -127,8 +127,8 @@ final class Importer
                 $seen[$norm($url)] = true;
                 $gid = $groups[$groupTitle] ??= self::groupByTitle($groupTitle, $replace);
                 $next[$gid] ??= (int) Db::one('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM dials WHERE group_id = ?', [$gid])['p'];
-                Db::run("INSERT INTO dials (group_id, position, title, url, thumb_status, created_at) VALUES (?,?,?,?, 'pending', ?)",
-                    [$gid, $next[$gid]++, mb_substr($title !== '' ? $title : (string) parse_url($url, PHP_URL_HOST), 0, 200), $url, $added > 0 ? $added : time()]);
+                Db::run("INSERT INTO dials (user_id, group_id, position, title, url, thumb_status, created_at) VALUES (?,?,?,?,?, 'pending', ?)",
+                    [Ctx::uid(), $gid, $next[$gid]++, mb_substr($title !== '' ? $title : (string) parse_url($url, PHP_URL_HOST), 0, 200), $url, $added > 0 ? $added : time()]);
                 $count++;
             }
             Sections::repair();
@@ -142,12 +142,12 @@ final class Importer
 
     private static function wipe(): void
     {
-        foreach (Db::all('SELECT thumb_file, thumb_orig FROM dials') as $d) {
+        foreach (Db::all('SELECT thumb_file, thumb_orig FROM dials WHERE user_id = ?', [Ctx::uid()]) as $d) {
             Thumbs::dropFiles($d);
         }
-        Db::run('DELETE FROM dials');
-        Db::run('DELETE FROM sections');
-        Db::run('DELETE FROM groups');
+        Db::run('DELETE FROM dials WHERE user_id = ?', [Ctx::uid()]);
+        Db::run('DELETE FROM sections WHERE user_id = ?', [Ctx::uid()]);
+        Db::run('DELETE FROM groups WHERE user_id = ?', [Ctx::uid()]);
     }
 
     // ---------- own format ----------
@@ -164,7 +164,7 @@ final class Importer
             $newGroups = [];
             $gcount = 0;
             foreach ((array) $data['groups'] as $g) {
-                $had = Db::one('SELECT id FROM groups WHERE title = ?', [mb_substr(trim((string) $g['title']), 0, 80) ?: 'Gruppe']) !== null;
+                $had = Db::one('SELECT id FROM groups WHERE title = ? AND user_id = ?', [mb_substr(trim((string) $g['title']), 0, 80) ?: 'Gruppe', Ctx::uid()]) !== null;
                 $gmap[(int) $g['id']] = self::groupByTitle((string) $g['title'], $replace);
                 if (!$had) {
                     $newGroups[$gmap[(int) $g['id']]] = true;
@@ -200,9 +200,9 @@ final class Importer
                 $mode = in_array($d['thumb_mode'], ['auto', 'screenshot', 'url', 'upload', 'none', 'icon'], true) ? $d['thumb_mode'] : 'auto';
                 $status = $file ? 'ok' : (in_array($mode, ['auto', 'screenshot', 'url', 'icon'], true) ? 'pending' : 'none');
                 $x = self::extras($d);
-                Db::run('INSERT INTO dials (group_id, position, title, url, thumb_mode, thumb_src, thumb_file, thumb_kind, fit, thumb_status, visits, last_visit, created_at, no_check, tags, note, color, badge, badge_color, keep, section_id)
-                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                    [$gmap[(int) $d['group_id']], (int) $d['position'], mb_substr((string) $d['title'], 0, 200), $url, $mode, $d['thumb_src'] ?? null,
+                Db::run('INSERT INTO dials (user_id, group_id, position, title, url, thumb_mode, thumb_src, thumb_file, thumb_kind, fit, thumb_status, visits, last_visit, created_at, no_check, tags, note, color, badge, badge_color, keep, section_id)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                    [Ctx::uid(), $gmap[(int) $d['group_id']], (int) $d['position'], mb_substr((string) $d['title'], 0, 200), $url, $mode, $d['thumb_src'] ?? null,
                         $file, $file ? ($d['thumb_kind'] ?? null) : null, in_array($d['fit'] ?? 'auto', ['auto', 'cover', 'contain'], true) ? $d['fit'] : 'auto',
                         $status, (int) ($d['visits'] ?? 0), $d['last_visit'] ?? null, (int) ($d['created_at'] ?? time()), empty($d['no_check']) ? 0 : 1,
                         $x['tags'], $x['note'], $x['color'], $x['badge'], $x['badge_color'], empty($d['keep']) ? 0 : 1, $smap[(int) ($d['section_id'] ?? 0)] ?? null]);
@@ -267,12 +267,12 @@ final class Importer
     private static function groupByTitle(string $title, bool $freshInstall): int
     {
         $title = mb_substr(trim($title), 0, 80) ?: 'Gruppe';
-        $row = Db::one('SELECT id FROM groups WHERE title = ?', [$title]);
+        $row = Db::one('SELECT id FROM groups WHERE title = ? AND user_id = ?', [$title, Ctx::uid()]);
         if ($row) {
             return (int) $row['id'];
         }
-        $pos = (int) Db::one('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM groups')['p'];
-        Db::run('INSERT INTO groups (title, position) VALUES (?, ?)', [$title, $pos]);
+        $pos = (int) Db::one('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM groups WHERE user_id = ?', [Ctx::uid()])['p'];
+        Db::run('INSERT INTO groups (user_id, title, position) VALUES (?, ?, ?)', [Ctx::uid(), $title, $pos]);
         return Db::insertId();
     }
 
@@ -329,9 +329,9 @@ final class Importer
                     }
                 }
                 $title = trim((string) ($d['title'] ?? '')) ?: (parse_url($url, PHP_URL_HOST) ?: $url);
-                Db::run('INSERT INTO dials (group_id, position, title, url, thumb_mode, thumb_src, thumb_file, thumb_kind, thumb_status, visits, last_visit, created_at)
-                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-                    [$gid, $next[$gid]++, mb_substr($title, 0, 200), $url, $mode, $src, $file, $kind, $status,
+                Db::run('INSERT INTO dials (user_id, group_id, position, title, url, thumb_mode, thumb_src, thumb_file, thumb_kind, thumb_status, visits, last_visit, created_at)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                    [Ctx::uid(), $gid, $next[$gid]++, mb_substr($title, 0, 200), $url, $mode, $src, $file, $kind, $status,
                         (int) ($d['visits'] ?? 0), null, (int) ($d['ts_created'] ?? time())]);
                 $count++;
             }

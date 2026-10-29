@@ -255,7 +255,7 @@ dialog.wide { width: min(860px, calc(100vw - 24px)); }
 .dlg-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--border); }
 .field { display: block; margin-bottom: 14px; }
 .field > span, .lbl { display: block; font-size: .72rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
-.field input[type=text], .field input[type=url], .field input[type=password], .field select {
+.field input[type=text], .field input[type=url], .field input[type=password], .field input[type=email], .field input[type=number], .field select, .field textarea {
     width: 100%; padding: 10px 12px; border: 1px solid transparent; border-radius: 10px; background: var(--field);
 }
 .field input:focus, .field select:focus { outline: 2px solid var(--accent); }
@@ -485,3 +485,9 @@ dialog, .drawer-scroll, .dlg-body, .opts-body, .opts-nav { overscroll-behavior: 
 .croph.nw { left: -10px; top: -10px; cursor: nwse-resize; } .croph.ne { right: -10px; top: -10px; cursor: nesw-resize; }
 .croph.sw { left: -10px; bottom: -10px; cursor: nesw-resize; } .croph.se { right: -10px; bottom: -10px; cursor: nwse-resize; }
 .btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vertical-align: -3px; }
+
+.secgrp > .secbody { padding: 10px 12px; border-top: 1px solid var(--border); }
+.acct-title { margin: -8px 0 14px; font-size: 1rem; font-weight: 600; color: var(--muted); }
+.acct-links { margin-top: 14px; text-align: center; }
+.msg.ok { color: #15803d; }
+[data-theme=dark] .msg.ok { color: #4ade80; }

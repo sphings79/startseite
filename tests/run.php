@@ -9,7 +9,7 @@ require __DIR__ . '/lib.php';
 
 $php = PHP_BINARY;
 $failed = 0;
-foreach (['unit.php', 'integration.php'] as $file) {
+foreach (['unit.php', 'mail.php', 'integration.php'] as $file) {
     $dir = T::tmpDir();
     echo "=== $file ===\n";
     $cmd = escapeshellarg($php) . ' ' . escapeshellarg(__DIR__ . '/' . $file);

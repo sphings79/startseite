@@ -2,15 +2,16 @@
 declare(strict_types=1);
 
 /**
- * Scheduled backups: the same ZIP as the manual export, written to DATA_DIR/backups and pruned to the configured count.
+ * Scheduled backups: the same ZIP as the manual export, written to DATA_DIR/backups/u<id>/ (one folder per user)
+ * and pruned to the count that user configured.
  */
 final class Backup
 {
     private const NAME = '/^startseite-\d{8}-\d{6}\.zip$/';
 
-    public static function dir(): string
+    public static function dir(?int $uid = null): string
     {
-        $dir = Config::get('data_dir') . '/backups';
+        $dir = Config::get('data_dir') . '/backups/u' . ($uid ?? Ctx::uid());
         if (!is_dir($dir) && !mkdir($dir, 0750, true) && !is_dir($dir)) {
             throw new RuntimeException('Cannot create backup directory');
         }
@@ -18,10 +19,10 @@ final class Backup
     }
 
     /** @return list<array{name:string,size:int,time:int}> newest first */
-    public static function list(): array
+    public static function list(?int $uid = null): array
     {
         $out = [];
-        foreach (glob(self::dir() . '/startseite-*.zip') ?: [] as $f) {
+        foreach (glob(self::dir($uid) . '/startseite-*.zip') ?: [] as $f) {
             if (preg_match(self::NAME, basename($f))) {
                 $out[] = ['name' => basename($f), 'size' => (int) filesize($f), 'time' => (int) filemtime($f)];
             }
@@ -30,11 +31,12 @@ final class Backup
         return $out;
     }
 
-    public static function path(string $name): ?string
+    public static function path(string $name, ?int $uid = null): ?string
     {
-        return preg_match(self::NAME, $name) && is_file(self::dir() . '/' . $name) ? self::dir() . '/' . $name : null;
+        return preg_match(self::NAME, $name) && is_file(self::dir($uid) . '/' . $name) ? self::dir($uid) . '/' . $name : null;
     }
 
+    /** Backs up the user in context. */
     public static function create(): string
     {
         $name = 'startseite-' . date('Ymd-His') . '.zip';
@@ -65,5 +67,15 @@ final class Backup
         }
         $last = self::list()[0]['time'] ?? 0;
         return time() - $last >= (int) Settings::get('backup_interval_hours') * 3600;
+    }
+
+    /** Removes every backup of a user (account deletion). */
+    public static function deleteAll(int $uid): void
+    {
+        $dir = Config::get('data_dir') . '/backups/u' . $uid;
+        foreach (glob($dir . '/*') ?: [] as $f) {
+            @unlink($f);
+        }
+        @rmdir($dir);
     }
 }

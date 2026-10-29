@@ -4,7 +4,7 @@
     const boot = JSON.parse(document.getElementById('boot').textContent);
     const S = {
         base: boot.base, csrf: boot.csrf, username: boot.username, settings: boot.settings,
-        groups: boot.groups, sections: boot.sections, dials: boot.dials, jobs: boot.jobs, screenshots: boot.screenshots,
+        groups: boot.groups, sections: boot.sections, user: boot.user, mail: boot.mail, dials: boot.dials, jobs: boot.jobs, screenshots: boot.screenshots,
     };
     const ui = { group: null, query: '', tags: new Set(), sel: 0, cleanSel: new Set(), checkFilter: 'problems', checkSel: new Set(), onState: null };
     const root = document.documentElement;
@@ -1332,7 +1332,8 @@
         const navLabel = h('span');
         const optsEl = h('div', { class: 'opts' });
         const navToggle = h('button', { type: 'button', class: 'opts-toggle', 'aria-label': 'Bereich wählen', onclick: () => optsEl.classList.toggle('nav-open') }, icon('menu'), navLabel);
-        const SECTIONS = [['general', 'Allgemein'], ['themes', 'Themen'], ['bookmarks', 'Lesezeichen'], ['check', 'Prüfung'], ['cleanup', 'Aufräumen'], ['groups', 'Gruppen'], ['security', 'Sicherheit'], ['system', 'System']];
+        const SECTIONS = [['general', 'Allgemein'], ['themes', 'Themen'], ['bookmarks', 'Lesezeichen'], ['check', 'Prüfung'], ['cleanup', 'Aufräumen'], ['groups', 'Gruppen'], ['security', 'Sicherheit'], ['system', 'System'],
+            ...(S.user?.role === 'admin' ? [['users', 'Benutzer']] : [])];
 
         const seg = (items, current, fn) => h('div', { class: 'seg' }, items.map(([v, t]) =>
             h('button', { type: 'button', class: current === v ? 'on' : '', text: t, onclick: () => fn(v) })));
@@ -1559,13 +1560,104 @@
                     toggle('Zuletzt benutzte Gruppe merken', 'keep_active_group', { render: false }),
                 ];
             },
+            users: () => {
+                const box = h('div', {}, h('p', { class: 'msg', text: 'Lädt …' }));
+                const flash = h('p', { class: 'msg', hidden: true });
+                const say = (text, err = false) => { flash.hidden = false; flash.className = 'msg' + (err ? ' err' : ''); flash.textContent = text; };
+                const when = (t) => t ? new Date(t * 1000).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : 'nie';
+                const fmtSize = (n) => (n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
+                const act = async (fn, ok) => { try { await fn(); if (ok) say(ok); await load(); } catch (err) { say(err.message, true); } };
+                let data = null;
+                const open = new Set();
+
+                const backupsOf = (u) => {
+                    const list = h('div', { class: 'clist' }, h('p', { class: 'msg', text: 'Lädt …' }));
+                    const draw = (backups) => list.replaceChildren(...(backups.length ? backups.map((b) => h('div', { class: 'crow nochk' },
+                        h('div', { class: 'ct', text: b.name }), h('div', { class: 'cr', text: `${new Date(b.time * 1000).toLocaleString('de-DE')} · ${fmtSize(b.size)}` }),
+                        h('div', { class: 'ca' }, h('button', { class: 'btn danger', type: 'button', text: 'Für diesen Benutzer wiederherstellen', onclick: async () => {
+                            if (!confirm(`Alle Daten von ${u.email} werden durch diese Sicherung ersetzt. Andere Benutzer bleiben unberührt. Fortfahren?`)) return;
+                            try { const r = await api('POST', `/admin/users/${u.id}/backups/${encodeURIComponent(b.name)}/restore`); say(`${r.dials} Lesezeichen in ${r.groups} Gruppen wiederhergestellt.`); await load(); } catch (err) { say(err.message, true); }
+                        } })))) : [h('p', { class: 'msg', text: 'Noch keine Sicherungen.' })]));
+                    api('GET', `/admin/users/${u.id}/backups`).then((r) => draw(r.backups)).catch((err) => say(err.message, true));
+                    return h('div', {}, h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', text: 'Jetzt sichern', onclick: async () => {
+                        try { draw((await api('POST', `/admin/users/${u.id}/backups`)).backups); } catch (err) { say(err.message, true); }
+                    } })), list);
+                };
+
+                const userRow = (u) => {
+                    const me = u.id === S.user?.id;
+                    const det = h('details', { class: 'secgrp', open: open.has(u.id), ontoggle: (e) => { e.currentTarget.open ? open.add(u.id) : open.delete(u.id); } },
+                        h('summary', {}, h('span', { class: 'gname', text: u.email }),
+                            h('span', { class: 'badge' + (u.role === 'admin' ? ' ok' : ''), text: u.role === 'admin' ? 'Admin' : 'Benutzer' }),
+                            u.status !== 'active' ? h('span', { class: 'badge dead', text: u.status === 'pending' ? 'unbestätigt' : 'gesperrt' }) : null,
+                            h('span', { class: 'badge', text: `${u.dials} Lesezeichen` })),
+                        h('div', { class: 'secbody' },
+                            h('p', { class: 'msg', text: `Letzte Anmeldung: ${when(u.last_login)} · Zwei Faktoren: ${[u.totp ? 'Authenticator-App' : '', u.passkeys ? u.passkeys + ' Passkey(s)' : ''].filter(Boolean).join(', ') || 'keine'} · Mail-Sprache: ${u.lang === 'en' ? 'English' : 'Deutsch'}` }),
+                            h('div', { class: 'actions' },
+                                h('button', { class: 'btn', type: 'button', text: 'Passwort-Reset per Mail', disabled: !S.mail, onclick: () => act(() => api('POST', `/admin/users/${u.id}/reset-mail`), 'Reset-Mail gesendet.') }),
+                                h('button', { class: 'btn', type: 'button', text: 'Zwei Faktoren zurücksetzen', disabled: !u.totp && !u.passkeys, onclick: () => { if (confirm(`Authenticator-App und Passkeys von ${u.email} entfernen?`)) act(() => api('POST', `/admin/users/${u.id}/reset-2fa`), 'Zurückgesetzt.'); } }),
+                                h('button', { class: 'btn', type: 'button', text: u.role === 'admin' ? 'Admin entziehen' : 'Zum Admin machen', disabled: me, onclick: () => act(() => api('POST', `/admin/users/${u.id}/role`, { role: u.role === 'admin' ? 'user' : 'admin' })) }),
+                                h('button', { class: 'btn', type: 'button', text: u.status === 'disabled' ? 'Entsperren' : 'Sperren', disabled: me || u.status === 'pending', onclick: () => act(() => api('POST', `/admin/users/${u.id}/disable`, { disabled: u.status !== 'disabled' })) }),
+                                h('button', { class: 'btn danger', type: 'button', text: 'Löschen', disabled: me, onclick: () => { if (confirm(`${u.email} mit allen Lesezeichen, Bildern und Sicherungen unwiderruflich löschen?`)) act(() => api('DELETE', `/admin/users/${u.id}`), 'Gelöscht.'); } })),
+                            h('span', { class: 'lbl', text: 'Sicherungen dieses Benutzers' }), backupsOf(u)));
+                    return det;
+                };
+
+                const render = () => {
+                    const c = data.config;
+                    const f = { ...c, smtp_pass: '', smtp_pass_clear: false };
+                    const text = (label, key, o = {}) => h('label', { class: 'field' }, h('span', { text: label }), h('input', { type: o.type || 'text', value: f[key] ?? '', placeholder: o.ph || '', autocomplete: 'off', autocapitalize: 'none', spellcheck: false, oninput: (e) => { f[key] = o.num ? Number(e.target.value) : e.target.value; } }));
+                    const sel = (label, key, opts) => h('label', { class: 'field' }, h('span', { text: label }), h('select', { onchange: (e) => { f[key] = e.target.value; } }, opts.map(([v, t]) => h('option', { value: v, text: t, selected: f[key] === v }))));
+                    const inv = { email: '', lang: 'de', role: 'user' };
+                    box.replaceChildren(...[
+                        h('h3', { text: `Benutzer (${data.users.length})` }),
+                        ...data.users.map(userRow),
+                        h('h3', { text: 'Benutzer einladen' }),
+                        h('p', { class: 'msg', text: 'Legt das Konto an und schickt einen Link, über den die Person ihr Passwort selbst festlegt.' }),
+                        h('div', { class: 'row' }, h('label', { class: 'field' }, h('span', { text: 'E-Mail-Adresse' }), h('input', { type: 'email', autocomplete: 'off', oninput: (e) => { inv.email = e.target.value; } })),
+                            h('label', { class: 'field' }, h('span', { text: 'Sprache der Mail' }), h('select', { onchange: (e) => { inv.lang = e.target.value; } }, [['de', 'Deutsch'], ['en', 'English']].map(([v, t]) => h('option', { value: v, text: t }))))),
+                        h('label', { class: 'chk-box' }, h('input', { type: 'checkbox', onchange: (e) => { inv.role = e.target.checked ? 'admin' : 'user'; } }), 'Als Admin anlegen'),
+                        h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'button', text: 'Einladen', disabled: !data.mail, onclick: () => act(() => api('POST', '/admin/users', inv), 'Einladung gesendet.') })),
+                        data.mail ? null : h('p', { class: 'msg err', text: 'Ohne eingerichteten Mailversand (unten) kann niemand eingeladen werden.' }),
+
+                        h('h3', { text: 'Registrierung' }),
+                        sel('Wer darf sich selbst registrieren?', 'reg_mode', [['off', 'Niemand'], ['domains', 'Nur freigegebene Adressen und Domains'], ['any', 'Jeder mit einer E-Mail-Adresse']]),
+                        h('label', { class: 'field' }, h('span', { text: 'Freigegeben (eine Domain oder Adresse pro Zeile, zum Beispiel firma.de oder anna@firma.de)' }),
+                            h('textarea', { rows: 4, value: f.reg_allowed || '', spellcheck: false, autocapitalize: 'none', oninput: (e) => { f.reg_allowed = e.target.value; } })),
+                        h('p', { class: 'msg', text: 'Jede Registrierung muss per Link in einer Mail bestätigt werden. Dafür muss der Mailversand eingerichtet sein.' }),
+                        text('Basis-URL für Links in Mails (leer = Adresse, unter der du gerade arbeitest)', 'app_url', { ph: data.default_url }),
+
+                        h('h3', { text: 'Mailversand (SMTP)' }),
+                        h('div', { class: 'row' }, text('Server', 'smtp_host', { ph: 'mail.example.org' }), text('Port', 'smtp_port', { type: 'number', num: true, ph: '25' })),
+                        sel('Verschlüsselung', 'smtp_security', [['none', 'Keine (Port 25, internes Netz)'], ['starttls', 'STARTTLS (Port 587)'], ['ssl', 'SSL/TLS (Port 465)']]),
+                        h('div', { class: 'row' }, text('Benutzername (leer = ohne Anmeldung)', 'smtp_user'),
+                            h('label', { class: 'field' }, h('span', { text: c.smtp_pass_set ? 'Passwort (gespeichert, leer lassen = behalten)' : 'Passwort' }),
+                                h('input', { type: 'password', autocomplete: 'new-password', placeholder: c.smtp_pass_set ? '••••••••' : '', oninput: (e) => { f.smtp_pass = e.target.value; } }))),
+                        c.smtp_pass_set ? h('label', { class: 'chk-box' }, h('input', { type: 'checkbox', onchange: (e) => { f.smtp_pass_clear = e.target.checked; } }), 'Gespeichertes Passwort löschen') : null,
+                        h('div', { class: 'row' }, text('Absenderadresse', 'smtp_from', { ph: 'startseite@example.org' }), text('Absendername', 'smtp_from_name')),
+                        h('label', { class: 'chk-box' }, h('input', { type: 'checkbox', checked: !!f.smtp_verify, onchange: (e) => { f.smtp_verify = e.target.checked; } }), 'Zertifikat des Mailservers prüfen (für interne Server mit eigenem Zertifikat abschalten)'),
+                        h('div', { class: 'actions' },
+                            h('button', { class: 'btn primary', type: 'button', text: 'Speichern', onclick: async () => {
+                                try { const r = await api('PUT', '/admin/config', { ...f }); S.mail = r.mail; say('Gespeichert.'); await load(); } catch (err) { say(err.message, true); }
+                            } }),
+                            h('button', { class: 'btn', type: 'button', text: 'Testmail an mich senden', onclick: async () => {
+                                say('Sende …');
+                                try { const r = await api('POST', '/admin/smtp-test'); say('Testmail an ' + r.to + ' gesendet.'); } catch (err) { say(err.message, true); }
+                            } })),
+                        h('p', { class: 'msg', text: 'Erst speichern, dann testen. Das Passwort wird verschlüsselt abgelegt.' }),
+                    ].filter(Boolean));
+                };
+                const load = async () => { try { data = await api('GET', '/admin/overview'); S.mail = data.mail; render(); } catch (err) { box.replaceChildren(h('p', { class: 'msg err', text: err.message })); } };
+                load();
+                return [h('h3', { text: 'Benutzerverwaltung' }), flash, box];
+            },
             system: () => {
                 const status = h('p', { class: 'msg', hidden: true });
                 const mode = h('select', {}, h('option', { value: 'replace', text: 'Alles ersetzen' }), h('option', { value: 'merge', text: 'Zu vorhandenen hinzufügen' }));
                 const fileIn = h('input', { type: 'file', accept: '.zip,.json,.html,.htm,application/zip,application/json,text/html' });
                 const pw = { cur: '', n1: '', n2: '' };
                 const pwMsg = h('p', { class: 'msg', hidden: true });
-                const un = { cur: '', name: S.username };
+                const un = { cur: '', name: '' };
                 const unMsg = h('p', { class: 'msg', hidden: true });
 
                 // Scheduled backups: settings plus the list of files on the server.
@@ -1619,7 +1711,7 @@
                         } catch (err) { status.className = 'msg err'; status.textContent = err.message; e.target.disabled = false; }
                     } })), status,
                     h('h3', { text: 'Passwort ändern' }),
-                    ...[['Aktuelles Passwort', 'cur', 'current-password'], ['Neues Passwort (mind. 12 Zeichen)', 'n1', 'new-password'], ['Neues Passwort wiederholen', 'n2', 'new-password']].map(([l, k, ac]) =>
+                    ...[['Aktuelles Passwort', 'cur', 'current-password'], ['Neues Passwort (mind. 12 Zeichen mit Buchstaben, Zahl und Sonderzeichen)', 'n1', 'new-password'], ['Neues Passwort wiederholen', 'n2', 'new-password']].map(([l, k, ac]) =>
                         h('label', { class: 'field' }, h('span', { text: l }), h('input', { type: 'password', autocomplete: ac, oninput: (e) => { pw[k] = e.target.value; } }))),
                     pwMsg,
                     h('div', { class: 'actions' }, h('button', { class: 'btn primary', text: 'Passwort speichern', onclick: async () => {
@@ -1630,21 +1722,23 @@
                             pwMsg.className = 'msg'; pwMsg.textContent = 'Passwort geändert; andere Sitzungen wurden beendet.';
                         } catch (err) { pwMsg.className = 'msg err'; pwMsg.textContent = err.message; }
                     } })),
-                    h('h3', { text: 'Benutzername ändern' }),
-                    h('label', { class: 'field' }, h('span', { text: 'Neuer Benutzername' }), h('input', { type: 'text', value: S.username, maxlength: 64, autocomplete: 'username', oninput: (e) => { un.name = e.target.value; } })),
+                    h('h3', { text: 'E-Mail-Adresse ändern' }),
+                    h('p', { class: 'msg', text: 'Du meldest dich mit deiner E-Mail-Adresse an. Die neue Adresse gilt erst, wenn du den Link in der Mail an sie bestätigt hast; danach musst du dich neu anmelden.' }),
+                    h('label', { class: 'field' }, h('span', { text: 'Neue E-Mail-Adresse' }), h('input', { type: 'email', maxlength: 254, autocomplete: 'off', autocapitalize: 'none', oninput: (e) => { un.name = e.target.value; } })),
                     h('label', { class: 'field' }, h('span', { text: 'Aktuelles Passwort' }), h('input', { type: 'password', autocomplete: 'current-password', oninput: (e) => { un.cur = e.target.value; } })),
                     unMsg,
-                    h('div', { class: 'actions' }, h('button', { class: 'btn primary', text: 'Benutzername speichern', onclick: async () => {
+                    h('div', { class: 'actions' }, h('button', { class: 'btn primary', text: 'Bestätigungsmail senden', onclick: async () => {
                         unMsg.hidden = false;
                         try {
-                            const r = await api('POST', '/username', { current: un.cur, username: un.name });
-                            S.username = r.username;
-                            unMsg.className = 'msg'; unMsg.textContent = 'Benutzername geändert; andere Sitzungen wurden beendet.';
-                            document.querySelectorAll('.acct-name').forEach((n) => { n.textContent = 'Angemeldet als ' + S.username; });
+                            await api('POST', '/email', { current: un.cur, email: un.name });
+                            unMsg.className = 'msg'; unMsg.textContent = 'Wir haben eine Mail an die neue Adresse geschickt. Bitte den Link darin öffnen.';
                         } catch (err) { unMsg.className = 'msg err'; unMsg.textContent = err.message; }
                     } })),
                     h('h3', { text: 'Konto' }),
-                    h('p', { class: 'msg acct-name', text: 'Angemeldet als ' + S.username }),
+                    h('p', { class: 'msg acct-name', text: 'Angemeldet als ' + S.username + (S.user?.role === 'admin' ? ' (Admin)' : '') }),
+                    h('label', { class: 'set' }, h('span', { text: 'Sprache der E-Mails' }),
+                        h('select', { onchange: async (e) => { try { await api('POST', '/language', { lang: e.target.value }); S.user.lang = e.target.value; toast('Gespeichert'); } catch (err) { toast(err.message); } } },
+                            [['de', 'Deutsch'], ['en', 'English']].map(([v, t]) => h('option', { value: v, text: t, selected: S.user?.lang === v })))),
                     h('div', { class: 'actions' }, h('button', { class: 'btn', text: 'Abmelden', onclick: logout })),
                 ];
             },

@@ -5,6 +5,8 @@ declare(strict_types=1);
 require __DIR__ . '/lib.php';
 require dirname(__DIR__) . '/src/bootstrap.php';
 
+Ctx::$uid = Auth::setUser('unit@example.org', 'unit-test-Passw0rd!', 'admin');
+
 T::section('WebAuthn');
 T::check('base64url round trip', WebAuthn::unb64u(WebAuthn::b64u("\x00\xff\xfe abc")) === "\x00\xff\xfe abc");
 T::throws('invalid base64url is rejected', fn () => WebAuthn::unb64u('***'), RuntimeException::class);
@@ -30,8 +32,11 @@ T::check('HTML is not SVG', !Thumbs::isSvg('<html><body><svg></svg></body></html
 T::check('PNG bytes are not SVG', !Thumbs::isSvg("\x89PNG\r\n\x1a\n"));
 
 T::section('Passwords and URLs');
-T::check('short password rejected', Auth::validatePassword('short') !== null);
-T::check('long password accepted', Auth::validatePassword('a-long-enough-password-123') === null);
+T::check('short password rejected', Auth::validatePassword('Sh0rt!') !== null);
+T::check('password without digit rejected', Auth::validatePassword('a-long-enough-password') !== null);
+T::check('password without special character rejected', Auth::validatePassword('ALongEnoughPassword123') !== null);
+T::check('password without letter rejected', Auth::validatePassword('123456789012!!') !== null);
+T::check('strong password accepted', Auth::validatePassword('a-long-enough-password-123') === null);
 T::check('bare host gets https', Api::normalizeUrl('example.org/a') === 'https://example.org/a');
 T::throws('javascript: URL rejected', fn () => Api::normalizeUrl('javascript:alert(1)'), InvalidArgumentException::class);
 T::throws('ftp: URL rejected', fn () => Api::normalizeUrl('ftp://example.org'), InvalidArgumentException::class);
@@ -48,14 +53,14 @@ T::check('local hosts are detected', LinkCheck::isLocalHost('192.168.1.10') && L
 T::check('public host is not local', !LinkCheck::isLocalHost('example.org') && !LinkCheck::isLocalHost('8.8.8.8'));
 
 T::section('Groups, sections and dials');
-Db::run("INSERT INTO groups (title, position) VALUES ('Home', 0), ('Work', 1)");
+Db::run("INSERT INTO groups (user_id, title, position) VALUES (?, 'Home', 0), (?, 'Work', 1)", [Ctx::uid(), Ctx::uid()]);
 Sections::repair();
 $home = (int) Db::one("SELECT id FROM groups WHERE title = 'Home'")['id'];
 $work = (int) Db::one("SELECT id FROM groups WHERE title = 'Work'")['id'];
 T::check('every group gets a default section', (int) Db::one('SELECT COUNT(*) c FROM sections')['c'] === 2);
 $def = Sections::defaultId($home);
 foreach ([['https://a.example', 'A'], ['https://b.example', 'B'], ['https://c.example', 'C']] as $i => [$u, $t]) {
-    Db::run("INSERT INTO dials (group_id, section_id, position, title, url, created_at) VALUES (?,?,?,?,?,?)", [$home, $def, $i, $t, $u, time()]);
+    Db::run("INSERT INTO dials (user_id, group_id, section_id, position, title, url, created_at) VALUES (?,?,?,?,?,?,?)", [Ctx::uid(), $home, $def, $i, $t, $u, time()]);
 }
 $s2 = Sections::create(['group_id' => $home, 'title' => 'Media', 'width' => 50, 'mode' => 'list', 'cols' => 2, 'bg_color' => '#1971c2', 'bg_opacity' => 30]);
 T::check('section is created with its values', $s2['title'] === 'Media' && $s2['mode'] === 'list' && $s2['cols'] === 2 && $s2['width'] === 50);
@@ -93,8 +98,8 @@ T::check('icon is stored as a .svg file', str_ends_with($iconFile, '.svg') && is
 $im = imagecreatetruecolor(200, 100);
 imagefill($im, 0, 0, imagecolorallocate($im, 200, 30, 30));
 ob_start(); imagepng($im); [$imgFile, $imgKind] = Thumbs::ingest((string) ob_get_clean(), 'shot');
-Db::run("INSERT INTO dials (group_id, section_id, position, title, url, thumb_mode, thumb_file, thumb_kind, thumb_status, created_at) VALUES (?,?,?,?,?, 'upload', ?, ?, 'ok', ?)",
-    [$home, $def, 9, 'Cropme', 'https://crop.example', $imgFile, $imgKind, time()]);
+Db::run("INSERT INTO dials (user_id, group_id, section_id, position, title, url, thumb_mode, thumb_file, thumb_kind, thumb_status, created_at) VALUES (?,?,?,?,?,?, 'upload', ?, ?, 'ok', ?)",
+    [Ctx::uid(), $home, $def, 9, 'Cropme', 'https://crop.example', $imgFile, $imgKind, time()]);
 $cid = (int) Db::insertId();
 Thumbs::crop($cid, 0.25, 0.0, 0.5, 1.0);
 $c = Db::one('SELECT * FROM dials WHERE id = ?', [$cid]);
