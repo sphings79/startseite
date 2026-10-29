@@ -75,6 +75,35 @@ Db::run('UPDATE dials SET section_id = NULL WHERE group_id = ?', [$home]);
 Sections::repair();
 T::check('repair assigns dials without a section', Db::one('SELECT 1 FROM dials WHERE section_id IS NULL') === null);
 
+T::section('Icons and cropping');
+$icon = Thumbs::normalizeIcon(['name' => 'home', 'd' => 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z', 'fg' => '#FFFFFF', 'bg' => '#2563eb']);
+T::check('icon request is normalised', $icon['fg'] === '#ffffff' && $icon['name'] === 'home');
+T::throws('icon with script-like path is refused', fn () => Thumbs::normalizeIcon(['name' => 'x', 'd' => 'M0 0"/><script>', 'fg' => '#ffffff', 'bg' => '#000000']), InvalidArgumentException::class);
+T::throws('icon with bad colour is refused', fn () => Thumbs::normalizeIcon(['name' => 'x', 'd' => 'M0 0h4v4z', 'fg' => 'red', 'bg' => '#000000']), InvalidArgumentException::class);
+T::check('generated icon SVG passes the backup check', Thumbs::isIconSvg(Thumbs::iconSvg($icon)));
+T::check('foreign SVG is refused in backups', !Thumbs::isIconSvg('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'));
+[$iconFile, $iconKind] = Thumbs::storeIcon($icon);
+T::check('icon is stored as a .svg file', str_ends_with($iconFile, '.svg') && is_file(Db::mediaDir() . '/' . $iconFile) && $iconKind === 'logo');
+$im = imagecreatetruecolor(200, 100);
+imagefill($im, 0, 0, imagecolorallocate($im, 200, 30, 30));
+ob_start(); imagepng($im); [$imgFile, $imgKind] = Thumbs::ingest((string) ob_get_clean(), 'shot');
+Db::run("INSERT INTO dials (group_id, section_id, position, title, url, thumb_mode, thumb_file, thumb_kind, thumb_status, created_at) VALUES (?,?,?,?,?, 'upload', ?, ?, 'ok', ?)",
+    [$home, $def, 9, 'Cropme', 'https://crop.example', $imgFile, $imgKind, time()]);
+$cid = (int) Db::insertId();
+Thumbs::crop($cid, 0.25, 0.0, 0.5, 1.0);
+$c = Db::one('SELECT * FROM dials WHERE id = ?', [$cid]);
+$cut = getimagesize(Db::mediaDir() . '/' . $c['thumb_file']);
+T::check('crop makes a new file and keeps the original', $c['thumb_file'] !== $imgFile && $c['thumb_orig'] === $imgFile && is_file(Db::mediaDir() . '/' . $imgFile));
+T::check('cropped image has the chosen size', $cut[0] === 100 && $cut[1] === 100, $cut[0] . 'x' . $cut[1]);
+Thumbs::crop($cid, 0.0, 0.0, 0.5, 0.5);
+$c2 = Db::one('SELECT * FROM dials WHERE id = ?', [$cid]);
+T::check('cropping again starts from the original', $c2['thumb_orig'] === $imgFile && !is_file(Db::mediaDir() . '/' . $c['thumb_file']));
+T::throws('invalid crop rectangle is refused', fn () => Thumbs::crop($cid, 0.8, 0.0, 0.5, 1.0), InvalidArgumentException::class);
+Thumbs::resetCrop($cid);
+$c3 = Db::one('SELECT * FROM dials WHERE id = ?', [$cid]);
+T::check('reset restores the original', $c3['thumb_file'] === $imgFile && $c3['thumb_orig'] === null && $c3['thumb_crop'] === null);
+Db::run('DELETE FROM dials WHERE id = ?', [$cid]);
+
 T::section('Backup round trip');
 Sections::update($def, ['title' => 'Main', 'border_width' => 3, 'border_color' => '#ff0000']);
 $before = [Db::all('SELECT title, width, border_width, border_color FROM sections ORDER BY group_id, position'),

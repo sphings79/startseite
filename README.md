@@ -31,13 +31,19 @@ If you used the **Speed Dial 2** browser extension, you can import its export. C
 |---|---|
 | ![Dialog for editing a section: title, width, tiles or list, colours, frame, radius, padding](docs/screenshots/section-editor.png) | ![Link check results with status badges and the tab and section of each bookmark](docs/screenshots/link-check.png) |
 
+| Icon picker | Crop |
+|---|---|
+| ![Icon picker with search, colours and a grid of Material Design Icons](docs/screenshots/icon-picker.png) | ![Crop dialog with a draggable frame in the tile's proportions](docs/screenshots/crop.png) |
+
 | Phone: sections | Phone: list | Phone: menu | Passkey login |
 |---|---|---|---|
 | ![Sections stacked on a phone](docs/screenshots/mobile-sections.png) | ![Phone list view](docs/screenshots/mobile-list.png) | ![Phone navigation drawer with the actions pinned at the bottom](docs/screenshots/mobile-menu.png) | ![Login page with a passkey button](docs/screenshots/login.png) |
 
 ## Features
 
-- **Tiles with previews:** upload, image URL, the site's own logo, [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) (works for LAN services by name), a headless Chromium screenshot, or a favicon as the last resort. Logos and screenshots are always shown whole.
+- **Tiles with previews:** upload, image URL (**SVG works**, drawn by Chromium), the site's own logo, [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) (works for LAN services by name), a headless Chromium screenshot, or a favicon as the last resort. Logos and screenshots are always shown whole.
+- **Icon picker:** search more than 7,000 [Material Design Icons](https://pictogrammers.com/library/mdi/) by name and pick glyph and background colour. The icon is stored on your server as a small SVG, nothing is loaded from outside.
+- **Crop images:** cut any uploaded, downloaded or found image with a draggable frame, free or in the tile's proportions. The original is kept, so you can change the cut or undo it.
 - **Tabs and sections:** every tab can hold several sections. Per section: title, width (1/4 to full), tiles or list (1 to 3 columns), tile size, aspect ratio, background colour with opacity, frame, corner radius, padding. Drag tiles between sections, drag sections by their grip, collapse them.
 - **Fast search:** press `/`, type, hit Enter. Searches title, URL, tags, notes and the page's meta description. `#tag` filters by tag. Bang shortcuts (`g`, `ddg`, `b`, `br`, `sp`, `e`, `q`) send the query to a web search engine.
 - **Link check:** a background worker finds dead links (DNS errors, refused connections, timeouts, 404/410, 5xx) and certificate problems, retries on different days before it calls a link dead, and lets you exclude hosts, groups, single bookmarks, or whole networks.
@@ -121,6 +127,11 @@ Local addresses (private IP ranges, `localhost`, names without a dot, `.local`, 
 Settings → Lesezeichen → Quick add: drag the button to your bookmarks bar. A click on any page opens a small window with URL and title filled in. The same page is the share target of the installed PWA on Android.
 Pasting a URL with Ctrl+V or dropping a link onto the page works as well.
 
+### Icons and cropping
+
+Edit a bookmark and choose **Icon** as the preview. Type a name (`home`, `camera`, `server`, ...), click an icon, pick the colours. Under any other preview type, **Zuschneiden** opens the crop frame.
+The uncropped original stays on the server but is not part of backups: after a restore, the cut image is what you get, without the option to change the cut.
+
 ### Backups and import
 
 The worker writes ZIP backups to `DATA_DIR/backups/` at the interval you choose. Restore through Settings → System → Import. On the command line: `php bin/import.php export.json [--merge]`.
@@ -178,7 +189,7 @@ Bug reports and ideas are welcome as [issues](../../issues).
 
 ## License
 
-[MIT](LICENSE). Third-party code: `public/assets/vendor/qrcode.js` ([qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator), MIT) draws the QR code for the authenticator app in your browser.
+[MIT](LICENSE). Third-party: the icon set `public/assets/vendor/mdi.json` comes from [@mdi/svg](https://github.com/Templarian/MaterialDesign-SVG) (Pictogrammers, Apache-2.0, see `public/assets/vendor/mdi-LICENSE.txt`). Code: `public/assets/vendor/qrcode.js` ([qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator), MIT) draws the QR code for the authenticator app in your browser.
 
 ---
 

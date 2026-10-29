@@ -44,7 +44,7 @@ final class Exporter
         }
         foreach (array_unique(array_filter($files)) as $f) {
             $path = Db::mediaDir() . '/' . $f;
-            if (preg_match('/^[a-f0-9]{24}\.(webp|png|jpg)$/', $f) && is_file($path)) {
+            if (preg_match('/^[a-f0-9]{24}\.(webp|png|jpg|svg)$/', $f) && is_file($path)) {
                 $zip->addFile($path, 'media/' . $f);
             }
         }

@@ -6,7 +6,7 @@ declare(strict_types=1);
  */
 final class Api
 {
-    private const THUMB_MODES = ['auto', 'screenshot', 'url', 'upload', 'none'];
+    private const THUMB_MODES = ['auto', 'screenshot', 'url', 'upload', 'none', 'icon'];
     private const UPLOAD_LIMIT = 12_000_000;
 
     public static function dispatch(string $method, string $path, array $session): never
@@ -72,6 +72,13 @@ final class Api
                     Http::json(['ok' => true]);
                 case $method === 'POST' && preg_match('#^/api/dials/(\d+)/refresh$#', $path, $m):
                     self::dialRefresh((int) $m[1]);
+                case $method === 'POST' && preg_match('#^/api/dials/(\d+)/crop$#', $path, $m):
+                    $b = Http::body();
+                    Thumbs::crop((int) $m[1], (float) ($b['x'] ?? -1), (float) ($b['y'] ?? -1), (float) ($b['w'] ?? 0), (float) ($b['h'] ?? 0));
+                    Http::json(self::dialOut(Db::one('SELECT * FROM dials WHERE id = ?', [(int) $m[1]])));
+                case $method === 'DELETE' && preg_match('#^/api/dials/(\d+)/crop$#', $path, $m):
+                    Thumbs::resetCrop((int) $m[1]);
+                    Http::json(self::dialOut(Db::one('SELECT * FROM dials WHERE id = ?', [(int) $m[1]])));
                 case $method === 'POST' && preg_match('#^/api/dials/(\d+)/thumb$#', $path, $m):
                     self::dialUpload((int) $m[1]);
 
@@ -167,6 +174,8 @@ final class Api
             'title'        => $d['title'],
             'url'          => $d['url'],
             'thumb'        => $d['thumb_file'] ? Http::url('/media/' . $d['thumb_file']) : null,
+            'orig'         => $d['thumb_orig'] ? Http::url('/media/' . $d['thumb_orig']) : null,
+            'crop'         => $d['thumb_crop'] ? json_decode($d['thumb_crop'], true) : null,
             'thumb_mode'   => $d['thumb_mode'],
             'thumb_src'    => $d['thumb_src'],
             'thumb_kind'   => $d['thumb_kind'],
@@ -392,8 +401,8 @@ final class Api
         if ((int) Db::one('SELECT COUNT(*) AS c FROM groups')['c'] <= 1) {
             throw new InvalidArgumentException('Die letzte Gruppe kann nicht gelöscht werden.');
         }
-        foreach (Db::all('SELECT thumb_file FROM dials WHERE group_id = ?', [$id]) as $d) {
-            Thumbs::deleteFile($d['thumb_file']);
+        foreach (Db::all('SELECT thumb_file, thumb_orig FROM dials WHERE group_id = ?', [$id]) as $d) {
+            Thumbs::dropFiles($d);
         }
         Db::run('DELETE FROM groups WHERE id = ?', [$id]);
         Http::json(['ok' => true]);
@@ -410,9 +419,13 @@ final class Api
         $url = self::normalizeUrl($in['url'] ?? '');
         $title = trim((string) ($in['title'] ?? '')) !== '' ? self::title($in['title']) : (parse_url($url, PHP_URL_HOST) ?: $url);
         $mode = in_array($in['thumb_mode'] ?? 'auto', self::THUMB_MODES, true) ? ($in['thumb_mode'] ?? 'auto') : 'auto';
-        $src = $mode === 'url' ? self::normalizeUrl($in['thumb_src'] ?? '') : null;
+        $src = match ($mode) {
+            'url'   => self::normalizeUrl($in['thumb_src'] ?? ''),
+            'icon'  => json_encode(Thumbs::normalizeIcon($in['icon'] ?? null)),
+            default => null,
+        };
         $fit = in_array($in['fit'] ?? 'auto', ['auto', 'cover', 'contain'], true) ? ($in['fit'] ?? 'auto') : 'auto';
-        $status = in_array($mode, ['auto', 'screenshot', 'url'], true) ? 'pending' : 'none';
+        $status = in_array($mode, ['auto', 'screenshot', 'url', 'icon'], true) ? 'pending' : 'none';
         $pos = (int) Db::one('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM dials WHERE group_id = ?', [$group])['p'];
         $x = self::extras($in, null);
         $section = isset($in['section_id']) && Sections::belongs((int) $in['section_id'], $group) ? (int) $in['section_id'] : Sections::defaultId($group);
@@ -431,7 +444,11 @@ final class Api
         $url = array_key_exists('url', $in) ? self::normalizeUrl($in['url']) : $cur['url'];
         $title = array_key_exists('title', $in) ? self::title($in['title']) : $cur['title'];
         $mode = in_array($in['thumb_mode'] ?? $cur['thumb_mode'], self::THUMB_MODES, true) ? ($in['thumb_mode'] ?? $cur['thumb_mode']) : $cur['thumb_mode'];
-        $src = $mode === 'url' ? self::normalizeUrl($in['thumb_src'] ?? $cur['thumb_src'] ?? '') : null;
+        $src = match ($mode) {
+            'url'   => self::normalizeUrl($in['thumb_src'] ?? $cur['thumb_src'] ?? ''),
+            'icon'  => json_encode(Thumbs::normalizeIcon($in['icon'] ?? ($cur['thumb_mode'] === 'icon' ? $cur['thumb_src'] : null))),
+            default => null,
+        };
         $fit = in_array($in['fit'] ?? $cur['fit'], ['auto', 'cover', 'contain'], true) ? ($in['fit'] ?? $cur['fit']) : 'auto';
         $noCheck = array_key_exists('no_check', $in) ? ($in['no_check'] ? 1 : 0) : (int) $cur['no_check'];
         $x = self::extras($in, $cur);
@@ -439,8 +456,8 @@ final class Api
         $status = $cur['thumb_status'];
         $changed = $url !== $cur['url'] || $mode !== $cur['thumb_mode'] || $src !== $cur['thumb_src'];
         if ($mode === 'none') {
-            Thumbs::deleteFile($cur['thumb_file']);
-            Db::run('UPDATE dials SET thumb_file = NULL, thumb_kind = NULL WHERE id = ?', [$id]);
+            Thumbs::dropFiles($cur);
+            Db::run('UPDATE dials SET thumb_file = NULL, thumb_kind = NULL, thumb_orig = NULL, thumb_orig_kind = NULL, thumb_crop = NULL WHERE id = ?', [$id]);
             $status = 'none';
         } elseif ($mode === 'upload') {
             $status = $cur['thumb_file'] ? 'ok' : 'none';
@@ -471,9 +488,9 @@ final class Api
 
     private static function dialDelete(int $id): never
     {
-        $cur = Db::one('SELECT thumb_file FROM dials WHERE id = ?', [$id]);
+        $cur = Db::one('SELECT thumb_file, thumb_orig FROM dials WHERE id = ?', [$id]);
         if ($cur) {
-            Thumbs::deleteFile($cur['thumb_file']);
+            Thumbs::dropFiles($cur);
             Db::run('DELETE FROM dials WHERE id = ?', [$id]);
         }
         Http::json(['ok' => true]);
@@ -482,9 +499,9 @@ final class Api
     private static function dialBulkDelete(array $in): never
     {
         foreach ((array) ($in['ids'] ?? []) as $id) {
-            $cur = Db::one('SELECT thumb_file FROM dials WHERE id = ?', [(int) $id]);
+            $cur = Db::one('SELECT thumb_file, thumb_orig FROM dials WHERE id = ?', [(int) $id]);
             if ($cur) {
-                Thumbs::deleteFile($cur['thumb_file']);
+                Thumbs::dropFiles($cur);
                 Db::run('DELETE FROM dials WHERE id = ?', [(int) $id]);
             }
         }
@@ -596,8 +613,8 @@ final class Api
         } catch (RuntimeException $e) {
             throw new InvalidArgumentException('Kein gültiges Bild.');
         }
-        Thumbs::deleteFile($cur['thumb_file']);
-        Db::run("UPDATE dials SET thumb_mode='upload', thumb_src=NULL, thumb_file=?, thumb_kind=?, thumb_status='ok', thumb_error=NULL WHERE id=?",
+        Thumbs::dropFiles($cur);
+        Db::run("UPDATE dials SET thumb_mode='upload', thumb_src=NULL, thumb_file=?, thumb_kind=?, thumb_status='ok', thumb_error=NULL, thumb_orig=NULL, thumb_orig_kind=NULL, thumb_crop=NULL WHERE id=?",
             [$file, $kind, $id]);
         Http::json(self::dialOut(Db::one('SELECT * FROM dials WHERE id = ?', [$id])));
     }
@@ -632,14 +649,15 @@ final class Api
 
     public static function media(string $name): never
     {
-        if (!preg_match('/^[a-f0-9]{24}\.(webp|png|jpg)$/', $name, $m)) {
+        if (!preg_match('/^[a-f0-9]{24}\.(webp|png|jpg|svg)$/', $name, $m)) {
             throw new HttpError(404, 'Not found');
         }
         $file = Db::mediaDir() . '/' . $name;
         if (!is_file($file)) {
             throw new HttpError(404, 'Not found');
         }
-        header('Content-Type: ' . ['webp' => 'image/webp', 'png' => 'image/png', 'jpg' => 'image/jpeg'][$m[1]]);
+        header('Content-Type: ' . ['webp' => 'image/webp', 'png' => 'image/png', 'jpg' => 'image/jpeg', 'svg' => 'image/svg+xml'][$m[1]]);
+        header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox");
         header('Cache-Control: private, max-age=31536000, immutable');
         header('Content-Length: ' . filesize($file));
         readfile($file);

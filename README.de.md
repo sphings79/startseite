@@ -31,13 +31,19 @@ Wer die Browser-Erweiterung **Speed Dial 2** genutzt hat, kann deren Export impo
 |---|---|
 | ![Dialog zum Bearbeiten eines Abschnitts: Titel, Breite, Kacheln oder Liste, Farben, Rahmen, Radius, Abstand](docs/screenshots/section-editor.png) | ![Ergebnisse der Link-Prüfung mit Status-Plaketten sowie Tab und Abschnitt jedes Lesezeichens](docs/screenshots/link-check.png) |
 
+| Icon-Auswahl | Zuschneiden |
+|---|---|
+| ![Icon-Auswahl mit Suche, Farben und einem Raster aus Material Design Icons](docs/screenshots/icon-picker.png) | ![Zuschneide-Dialog mit verschiebbarem Rahmen im Seitenverhältnis der Kachel](docs/screenshots/crop.png) |
+
 | Handy: Abschnitte | Handy: Liste | Handy: Menü | Passkey-Anmeldung |
 |---|---|---|---|
 | ![Abschnitte untereinander auf dem Handy](docs/screenshots/mobile-sections.png) | ![Listenansicht auf dem Handy](docs/screenshots/mobile-list.png) | ![Navigationsmenü auf dem Handy mit fest unten verankerten Aktionen](docs/screenshots/mobile-menu.png) | ![Anmeldeseite mit Passkey-Button](docs/screenshots/login.png) |
 
 ## Funktionen
 
-- **Kacheln mit Vorschau:** Upload, Bild-URL, das Logo der Seite selbst, [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) (funktioniert per Name auch für LAN-Dienste), ein Headless-Chromium-Screenshot oder zuletzt ein Favicon. Logos und Screenshots werden immer vollständig gezeigt.
+- **Kacheln mit Vorschau:** Upload, Bild-URL (**SVG funktioniert**, von Chromium gezeichnet), das Logo der Seite selbst, [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) (funktioniert per Name auch für LAN-Dienste), ein Headless-Chromium-Screenshot oder zuletzt ein Favicon. Logos und Screenshots werden immer vollständig gezeigt.
+- **Icon-Auswahl:** Über 7.000 [Material Design Icons](https://pictogrammers.com/library/mdi/) per Namen suchen, Symbol- und Hintergrundfarbe wählen. Das Icon liegt als kleines SVG auf deinem Server, von außen wird nichts geladen.
+- **Bilder zuschneiden:** Jedes hochgeladene, geladene oder gefundene Bild mit einem verschiebbaren Rahmen zuschneiden, frei oder im Seitenverhältnis der Kachel. Das Original bleibt erhalten, du kannst den Ausschnitt ändern oder zurücksetzen.
 - **Tabs und Abschnitte:** Jeder Tab kann mehrere Abschnitte enthalten. Pro Abschnitt: Titel, Breite (1/4 bis voll), Kacheln oder Liste (1 bis 3 Spalten), Kachelgröße, Seitenverhältnis, Hintergrundfarbe mit Deckkraft, Rahmen, Eckenradius, Innenabstand. Kacheln lassen sich zwischen Abschnitten ziehen, Abschnitte am Griff, und sie sind einklappbar.
 - **Schnelle Suche:** `/` drücken, tippen, Enter. Gesucht wird in Titel, URL, Tags, Notiz und der Meta-Beschreibung der Seite. `#tag` filtert nach Tag. Kürzel (`g`, `ddg`, `b`, `br`, `sp`, `e`, `q`) schicken die Eingabe an eine Web-Suchmaschine.
 - **Link-Prüfung:** Ein Worker findet tote Links (DNS-Fehler, abgelehnte Verbindung, Zeitüberschreitung, 404/410, 5xx) und Zertifikatsprobleme, wiederholt an verschiedenen Tagen, bevor er einen Link für tot erklärt, und kennt Ausschlüsse für Hosts, Gruppen, einzelne Lesezeichen und ganze Netze.
@@ -121,6 +127,11 @@ Lokale Adressen (private IP-Bereiche, `localhost`, Namen ohne Punkt, `.local`, `
 Einstellungen → Lesezeichen → Schnell hinzufügen: Den Button in die Lesezeichenleiste ziehen. Ein Klick auf einer beliebigen Seite öffnet ein kleines Fenster mit vorausgefüllter URL und Titel.
 Dieselbe Seite ist das Teilen-Ziel der installierten PWA unter Android. Eine kopierte URL mit Strg+V einfügen oder einen Link auf die Seite ziehen geht auch.
 
+### Icons und Zuschneiden
+
+Lesezeichen bearbeiten und als Vorschau **Icon** wählen. Einen Namen tippen (`home`, `camera`, `server`, …), ein Icon anklicken, Farben wählen. Bei jeder anderen Vorschau öffnet **Zuschneiden** den Rahmen.
+Das ungeschnittene Original bleibt auf dem Server, ist aber nicht Teil der Sicherung: Nach einer Wiederherstellung hast du das zugeschnittene Bild, ohne den Ausschnitt noch ändern zu können.
+
 ### Sicherung und Import
 
 Der Worker schreibt ZIP-Sicherungen nach `DATA_DIR/backups/` im eingestellten Abstand. Wiederherstellen über Einstellungen → System → Import. Auf der Kommandozeile: `php bin/import.php export.json [--merge]`.
@@ -178,7 +189,7 @@ Fehlerberichte und Ideen gern als [Issue](../../issues).
 
 ## Lizenz
 
-[MIT](LICENSE). Fremder Code: `public/assets/vendor/qrcode.js` ([qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator), MIT) zeichnet im Browser den QR-Code für die Authenticator-App.
+[MIT](LICENSE). Fremdes: Die Icon-Sammlung `public/assets/vendor/mdi.json` stammt aus [@mdi/svg](https://github.com/Templarian/MaterialDesign-SVG) (Pictogrammers, Apache-2.0, siehe `public/assets/vendor/mdi-LICENSE.txt`). Code: `public/assets/vendor/qrcode.js` ([qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator), MIT) zeichnet im Browser den QR-Code für die Authenticator-App.
 
 ---
 

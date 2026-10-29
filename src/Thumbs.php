@@ -79,9 +79,105 @@ final class Thumbs
 
     public static function deleteFile(?string $file): void
     {
-        if ($file && preg_match('/^[a-f0-9]{24}\.(webp|png|jpg)$/', $file)) {
+        if ($file && preg_match('/^[a-f0-9]{24}\.(webp|png|jpg|svg)$/', $file)) {
             @unlink(Db::mediaDir() . '/' . $file);
         }
+    }
+
+    /** Removes the image files of a dial row (shown image and the uncropped original). */
+    public static function dropFiles(array $row): void
+    {
+        self::deleteFile($row['thumb_file'] ?? null);
+        self::deleteFile($row['thumb_orig'] ?? null);
+    }
+
+    // ---------- icons (Material Design Icons) ----------
+
+    /**
+     * Validates an icon request: {name, d (SVG path of a 24x24 icon), fg, bg}. Only path commands and numbers are allowed.
+     * @return array{name:string,d:string,fg:string,bg:string}
+     */
+    public static function normalizeIcon(mixed $in): array
+    {
+        $in = is_string($in) ? json_decode($in, true) : $in;
+        if (!is_array($in)) {
+            throw new InvalidArgumentException('Ungültiges Icon.');
+        }
+        $name = (string) ($in['name'] ?? '');
+        $d = (string) ($in['d'] ?? '');
+        $fg = strtolower((string) ($in['fg'] ?? '#ffffff'));
+        $bg = strtolower((string) ($in['bg'] ?? '#2563eb'));
+        if (!preg_match('/^[a-z0-9-]{1,80}$/', $name) || !preg_match('/^[MmLlHhVvCcSsQqTtAaZz0-9 ,.\-]{4,6000}$/', $d)
+            || !preg_match('/^#[0-9a-f]{6}$/', $fg) || !preg_match('/^#[0-9a-f]{6}$/', $bg)) {
+            throw new InvalidArgumentException('Ungültiges Icon.');
+        }
+        return ['name' => $name, 'd' => $d, 'fg' => $fg, 'bg' => $bg];
+    }
+
+    /** The icon as a small self-contained SVG: rounded square in the background colour, glyph in the foreground colour. */
+    public static function iconSvg(array $icon): string
+    {
+        return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.4" fill="' . $icon['bg']
+            . '"/><path transform="translate(4.8 4.8) scale(.6)" d="' . $icon['d'] . '" fill="' . $icon['fg'] . '"/></svg>';
+    }
+
+    /** True for SVG files this app wrote itself; anything else is refused when it arrives in a backup. */
+    public static function isIconSvg(string $bytes): bool
+    {
+        return (bool) preg_match('#^<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="5\.4" fill="\#[0-9a-f]{6}"/><path transform="translate\(4\.8 4\.8\) scale\(\.6\)" d="[MmLlHhVvCcSsQqTtAaZz0-9 ,.\-]{4,6000}" fill="\#[0-9a-f]{6}"/></svg>$#', $bytes);
+    }
+
+    /** @return array{0:string,1:string} file name and kind */
+    public static function storeIcon(array $icon): array
+    {
+        $name = bin2hex(random_bytes(12)) . '.svg';
+        if (file_put_contents(Db::mediaDir() . '/' . $name, self::iconSvg($icon)) === false) {
+            throw new RuntimeException('Cannot write icon');
+        }
+        return [$name, 'logo'];
+    }
+
+    // ---------- cropping ----------
+
+    /** Cuts the rectangle (fractions of the original, 0..1) out of the dial's original image. */
+    public static function crop(int $id, float $x, float $y, float $w, float $h): void
+    {
+        $d = Db::one('SELECT * FROM dials WHERE id = ?', [$id]) ?? throw new InvalidArgumentException('Lesezeichen unbekannt.');
+        $src = $d['thumb_orig'] ?: $d['thumb_file'];
+        if (!$src || str_ends_with($src, '.svg')) {
+            throw new InvalidArgumentException('Dieses Bild lässt sich nicht zuschneiden.');
+        }
+        if ($x < 0 || $y < 0 || $w < 0.02 || $h < 0.02 || $x + $w > 1.0001 || $y + $h > 1.0001) {
+            throw new InvalidArgumentException('Ungültiger Ausschnitt.');
+        }
+        $im = @imagecreatefromstring((string) @file_get_contents(Db::mediaDir() . '/' . $src)) ?: throw new RuntimeException('Bild nicht lesbar.');
+        [$iw, $ih] = [imagesx($im), imagesy($im)];
+        $rect = ['x' => (int) round($x * $iw), 'y' => (int) round($y * $ih), 'width' => max(1, (int) round($w * $iw)), 'height' => max(1, (int) round($h * $ih))];
+        $rect['width'] = min($rect['width'], $iw - $rect['x']);
+        $rect['height'] = min($rect['height'], $ih - $rect['y']);
+        if ($rect['width'] < 8 || $rect['height'] < 8) {
+            throw new InvalidArgumentException('Der Ausschnitt ist zu klein.');
+        }
+        imagesavealpha($im, true);
+        $cut = imagecrop($im, $rect) ?: throw new RuntimeException('Zuschneiden fehlgeschlagen.');
+        $file = self::store($cut, true);
+        if ($d['thumb_orig']) {
+            self::deleteFile($d['thumb_file']); // the previous cut
+            Db::run('UPDATE dials SET thumb_file = ?, thumb_kind = ?, thumb_crop = ? WHERE id = ?', [$file, 'shot', json_encode([$x, $y, $w, $h]), $id]);
+        } else {
+            Db::run('UPDATE dials SET thumb_file = ?, thumb_kind = ?, thumb_orig = ?, thumb_orig_kind = ?, thumb_crop = ? WHERE id = ?',
+                [$file, 'shot', $d['thumb_file'], $d['thumb_kind'], json_encode([$x, $y, $w, $h]), $id]);
+        }
+    }
+
+    public static function resetCrop(int $id): void
+    {
+        $d = Db::one('SELECT * FROM dials WHERE id = ?', [$id]) ?? throw new InvalidArgumentException('Lesezeichen unbekannt.');
+        if (!$d['thumb_orig']) {
+            return;
+        }
+        self::deleteFile($d['thumb_file']);
+        Db::run('UPDATE dials SET thumb_file = thumb_orig, thumb_kind = thumb_orig_kind, thumb_orig = NULL, thumb_orig_kind = NULL, thumb_crop = NULL WHERE id = ?', [$id]);
     }
 
     // ---------- queue processing ----------
@@ -103,6 +199,8 @@ final class Thumbs
                     [$file, $kind] = self::autoThumb($dial['url'], (string) $dial['title']);
                     $error = null;
                 }
+            } elseif ($mode === 'icon') {
+                [$file, $kind] = self::storeIcon(self::normalizeIcon($dial['thumb_src']));
             } elseif ($mode === 'screenshot') {
                 [$file, $kind] = self::screenshot($dial['url']);
             } else {
@@ -113,8 +211,8 @@ final class Thumbs
         }
 
         if ($file !== null) {
-            self::deleteFile($dial['thumb_file']);
-            Db::run('UPDATE dials SET thumb_file = ?, thumb_kind = ?, thumb_status = ?, thumb_error = NULL WHERE id = ?',
+            self::dropFiles($dial); // a regenerated image replaces the old one and any cut made from it
+            Db::run('UPDATE dials SET thumb_file = ?, thumb_kind = ?, thumb_status = ?, thumb_error = NULL, thumb_orig = NULL, thumb_orig_kind = NULL, thumb_crop = NULL WHERE id = ?',
                 [$file, $kind, 'ok', $dial['id']]);
         } else {
             Db::run('UPDATE dials SET thumb_status = ?, thumb_error = ? WHERE id = ?', ['failed', $error ?? 'unknown', $dial['id']]);

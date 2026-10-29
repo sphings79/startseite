@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 define('APP_ROOT', dirname(__DIR__));
-define('APP_VERSION', '1.9.3');
+define('APP_VERSION', '1.10.0');
 
 spl_autoload_register(static function (string $class): void {
     $file = APP_ROOT . '/src/' . $class . '.php';

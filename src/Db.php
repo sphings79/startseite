@@ -200,6 +200,17 @@ SQL);
             $pdo->exec('PRAGMA user_version=5');
             $pdo->exec('COMMIT');
         }
+        if ($version < 6) {
+            // Cropping keeps the uncropped image (thumb_orig) so the cut can be changed or undone; thumb_crop is the rectangle.
+            $pdo->exec('BEGIN');
+            $pdo->exec(<<<'SQL'
+ALTER TABLE dials ADD COLUMN thumb_orig TEXT;
+ALTER TABLE dials ADD COLUMN thumb_orig_kind TEXT;
+ALTER TABLE dials ADD COLUMN thumb_crop TEXT;
+SQL);
+            $pdo->exec('PRAGMA user_version=6');
+            $pdo->exec('COMMIT');
+        }
     }
 
     /** @return list<array<string,mixed>> */

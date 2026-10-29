@@ -44,6 +44,8 @@
         none: '<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>',
         up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
         down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
+        pick: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>',
+        crop: '<path d="M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14"/>',
         grip: '<circle cx="9" cy="6" r="1.3"/><circle cx="15" cy="6" r="1.3"/><circle cx="9" cy="12" r="1.3"/><circle cx="15" cy="12" r="1.3"/><circle cx="9" cy="18" r="1.3"/><circle cx="15" cy="18" r="1.3"/>',
         gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
     };
@@ -858,16 +860,184 @@
     const dlgHead = (title, dlg) => h('div', { class: 'dlg-head' }, h('h2', { text: title }),
         h('button', { class: 'icon-btn', 'aria-label': 'Schließen', onclick: () => dlg().close() }, icon('x')));
 
+    // ---------- icon picker (Material Design Icons) and cropping ----------
+
+    const parseIcon = (d) => { try { return d?.thumb_mode === 'icon' ? JSON.parse(d.thumb_src) : null; } catch { return null; } };
+    let mdiData = null;
+    const loadMdi = async () => { mdiData ??= await (await fetch(S.base + '/assets/vendor/mdi.json?v=1', { credentials: 'same-origin' })).json(); return mdiData; };
+
+    function svgIcon(d, fg, bg) {
+        const NS = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(NS, 'svg');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('aria-hidden', 'true');
+        if (bg) {
+            const rect = document.createElementNS(NS, 'rect');
+            for (const [k, v] of Object.entries({ width: 24, height: 24, rx: 5.4, fill: bg })) rect.setAttribute(k, v);
+            svg.append(rect);
+        }
+        const path = document.createElementNS(NS, 'path');
+        path.setAttribute('d', d);
+        path.setAttribute('fill', fg);
+        if (bg) path.setAttribute('transform', 'translate(4.8 4.8) scale(.6)');
+        svg.append(path);
+        return svg;
+    }
+
+    /** Search field, result grid and two colours; writes the choice to st.icon = {name, d, fg, bg}. */
+    function iconPicker(st) {
+        st.icon ??= null;
+        const colors = { fg: st.icon?.fg || '#ffffff', bg: st.icon?.bg || S.settings.accent || '#2563eb' };
+        const grid = h('div', { class: 'icongrid' });
+        const info = h('p', { class: 'msg', text: 'Lade Icons …' });
+        const chosen = h('div', { class: 'iconchosen' });
+        const more = h('button', { type: 'button', class: 'btn', text: 'Mehr anzeigen', hidden: true });
+        let list = [];
+        let shown = 0;
+        const paintChosen = () => {
+            chosen.replaceChildren();
+            if (!st.icon) return;
+            st.icon.fg = colors.fg;
+            st.icon.bg = colors.bg;
+            chosen.append(h('div', { class: 'thumb sq' }, svgIcon(st.icon.d, colors.fg, colors.bg)), h('span', { text: st.icon.name }));
+        };
+        const paintGrid = (reset) => {
+            if (reset) { grid.replaceChildren(); shown = 0; }
+            for (const [name, d] of list.slice(shown, shown + 96)) {
+                grid.append(h('button', { type: 'button', class: 'iconbtn' + (st.icon?.name === name ? ' on' : ''), title: name,
+                    onclick: () => { st.icon = { name, d, fg: colors.fg, bg: colors.bg }; paintChosen(); paintGrid(true); } }, svgIcon(d, 'currentColor')));
+            }
+            shown = Math.min(list.length, shown + 96);
+            more.hidden = shown >= list.length;
+            info.textContent = list.length ? `${list.length} Icons` : 'Keine Treffer.';
+        };
+        const search = (q) => {
+            const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+            const scored = [];
+            for (const it of mdiData) {
+                const hay = it[0] + ' ' + it[2];
+                if (!words.every((w) => hay.includes(w))) continue;
+                scored.push([words.length && it[0].startsWith(words[0]) ? 0 : words.length && it[0].includes(words[0]) ? 1 : 2, it]);
+            }
+            list = scored.sort((a, b) => a[0] - b[0] || a[1][0].localeCompare(b[1][0])).map((x) => x[1]);
+            paintGrid(true);
+        };
+        more.addEventListener('click', () => paintGrid(false));
+        const box = h('div', { class: 'iconpicker' },
+            h('input', { type: 'search', placeholder: 'Icon suchen, z. B. home, camera, server …', autocapitalize: 'none', spellcheck: false, 'aria-label': 'Icon suchen', disabled: true,
+                oninput: (e) => search(e.target.value) }),
+            h('div', { class: 'row' },
+                h('label', { class: 'set inline' }, h('span', { text: 'Icon' }), h('input', { type: 'color', value: colors.fg, onchange: (e) => { colors.fg = e.target.value; paintChosen(); } })),
+                h('label', { class: 'set inline' }, h('span', { text: 'Hintergrund' }), h('input', { type: 'color', value: colors.bg, onchange: (e) => { colors.bg = e.target.value; paintChosen(); } }))),
+            chosen, info, grid, more,
+            h('p', { class: 'msg', text: 'Icons: Material Design Icons (Pictogrammers), Apache-2.0.' }));
+        paintChosen();
+        loadMdi().then(() => { box.querySelector('input[type=search]').disabled = false; search(''); }, () => { info.textContent = 'Icons konnten nicht geladen werden.'; });
+        return box;
+    }
+
+    function applyDial(d, fresh) {
+        const i = S.dials.findIndex((x) => x.id === fresh.id);
+        if (i >= 0) S.dials[i] = fresh;
+        Object.assign(d, fresh);
+        renderGrid();
+    }
+
+    /** Draggable crop frame over the uncropped image; the cut is made by the server and can be undone. */
+    function cropDialog(d, done) {
+        let dlg;
+        const ar = { tile: (() => { const [a, b] = S.settings.ratio.split(':').map(Number); return a / b; })(), free: 0, square: 1 };
+        const st = { r: d.crop ? { x: d.crop[0], y: d.crop[1], w: d.crop[2], h: d.crop[3] } : { x: 0, y: 0, w: 1, h: 1 }, lock: 'free' };
+        const img = h('img', { src: d.orig || d.thumb, alt: '', draggable: false });
+        const rect = h('div', { class: 'croprect' });
+        const dim = h('div', { class: 'cropdim' });
+        const stage = h('div', { class: 'cropstage' }, img, h('div', { class: 'cropclip' }, dim), rect);
+        const handles = ['nw', 'ne', 'sw', 'se'].map((k) => { const el = h('div', { class: 'croph ' + k, 'data-k': k }); rect.append(el); return el; });
+        const msg = h('p', { class: 'msg err', hidden: true });
+        const size = () => { const b = img.getBoundingClientRect(); return [b.width || 1, b.height || 1]; };
+        const paint = () => {
+            const { x, y, w, h: hh } = st.r;
+            for (const [k, v] of Object.entries({ left: x * 100 + '%', top: y * 100 + '%', width: w * 100 + '%', height: hh * 100 + '%' })) { rect.style[k] = v; dim.style[k] = v; }
+        };
+        const fit = () => { // the largest frame of the chosen proportions, centred
+            const [W, H] = size();
+            const a = ar[st.lock];
+            if (!a) { st.r = { x: 0, y: 0, w: 1, h: 1 }; return paint(); }
+            let w = W; let hh = W / a;
+            if (hh > H) { hh = H; w = H * a; }
+            st.r = { x: (W - w) / 2 / W, y: (H - hh) / 2 / H, w: w / W, h: hh / H };
+            paint();
+        };
+        let op = null;
+        stage.addEventListener('pointerdown', (e) => {
+            const k = e.target.dataset?.k;
+            if (!k && e.target !== rect) return;
+            e.preventDefault();
+            stage.setPointerCapture(e.pointerId);
+            const [W, H] = size();
+            const b = img.getBoundingClientRect();
+            const r = st.r;
+            op = { k, x0: e.clientX, y0: e.clientY, r: { ...r }, W, H, left: b.left, top: b.top,
+                ax: (k === 'nw' || k === 'sw' ? r.x + r.w : r.x) * W, ay: (k === 'nw' || k === 'ne' ? r.y + r.h : r.y) * H };
+        });
+        stage.addEventListener('pointermove', (e) => {
+            if (!op) return;
+            const { W, H } = op;
+            if (!op.k) {
+                st.r.x = Math.max(0, Math.min(1 - op.r.w, op.r.x + (e.clientX - op.x0) / W));
+                st.r.y = Math.max(0, Math.min(1 - op.r.h, op.r.y + (e.clientY - op.y0) / H));
+            } else {
+                const px = Math.max(0, Math.min(W, e.clientX - op.left));
+                const py = Math.max(0, Math.min(H, e.clientY - op.top));
+                const sx = px >= op.ax ? 1 : -1;
+                const sy = py >= op.ay ? 1 : -1;
+                let w = Math.abs(px - op.ax);
+                let hh = Math.abs(py - op.ay);
+                const a = ar[st.lock];
+                if (a) {
+                    w = Math.max(w, hh * a);
+                    w = Math.min(w, (sx > 0 ? W - op.ax : op.ax), (sy > 0 ? H - op.ay : op.ay) * a);
+                    hh = w / a;
+                }
+                w = Math.max(20, w); hh = Math.max(a ? 20 / a : 20, hh);
+                const x1 = sx > 0 ? op.ax : op.ax - w;
+                const y1 = sy > 0 ? op.ay : op.ay - hh;
+                st.r = { x: Math.max(0, x1) / W, y: Math.max(0, y1) / H, w: Math.min(w, W) / W, h: Math.min(hh, H) / H };
+            }
+            paint();
+        });
+        const end = () => { op = null; };
+        stage.addEventListener('pointerup', end);
+        stage.addEventListener('pointercancel', end);
+        img.addEventListener('load', () => { if (!d.crop) fit(); else paint(); });
+        const apply = async (btn) => {
+            btn.disabled = true; msg.hidden = true;
+            try {
+                applyDial(d, await api('POST', `/dials/${d.id}/crop`, { x: st.r.x, y: st.r.y, w: st.r.w, h: st.r.h }));
+                dlg.close(); done?.();
+            } catch (err) { msg.textContent = err.message; msg.hidden = false; btn.disabled = false; }
+        };
+        const applyBtn = h('button', { type: 'button', class: 'btn primary', text: 'Zuschneiden', onclick: (e) => apply(e.currentTarget) });
+        dlg = openDialog(h('div', { class: 'dlg' }, dlgHead('Bild zuschneiden', () => dlg),
+            h('div', { class: 'dlg-body' },
+                h('label', { class: 'field' }, h('span', { text: 'Seitenverhältnis des Rahmens' }),
+                    h('select', { onchange: (e) => { st.lock = e.target.value; fit(); } },
+                        [['free', 'Frei'], ['tile', `Wie die Kachel (${S.settings.ratio.replace(':', ' : ')})`], ['square', 'Quadrat']].map(([v, t]) => h('option', { value: v, text: t, selected: st.lock === v })))),
+                stage,
+                h('p', { class: 'msg', text: 'Rahmen verschieben oder an den Ecken aufziehen. Das Original bleibt erhalten; „Zuschnitt zurücksetzen“ stellt es wieder her.' }), msg),
+            h('div', { class: 'dlg-foot' }, h('button', { class: 'btn', type: 'button', text: 'Abbrechen', onclick: () => dlg.close() }), applyBtn)));
+    }
+
     function editDial(d, pre = {}) {
         const st = {
             title: d?.title || pre.title || '', url: d?.url || pre.url || '', group_id: d?.group_id || pre.group_id || realGroupId(), section_id: d?.section_id || pre.section_id || 0,
-            mode: d?.thumb_mode || 'auto', src: d?.thumb_src || '', fit: d?.fit || 'auto', file: null, no_check: !!d?.no_check,
+            mode: d?.thumb_mode || 'auto', src: d?.thumb_mode === 'url' ? d.thumb_src || '' : '', icon: parseIcon(d), fit: d?.fit || 'auto', file: null, no_check: !!d?.no_check,
             tags: [...(d?.tags || [])], note: d?.note || '', color: d?.color || '', badge: d?.badge || '', badge_color: d?.badge_color || '',
         };
         let dlg;
         const MODES = [
             ['auto', 'sparkle', 'Automatisch'], ['screenshot', 'shot', 'Screenshot'],
-            ['url', 'link', 'Bild-URL'], ['upload', 'upload', 'Hochladen'], ['none', 'none', 'Keins'],
+            ['url', 'link', 'Bild-URL'], ['upload', 'upload', 'Hochladen'], ['icon', 'pick', 'Icon'], ['none', 'none', 'Keins'],
         ];
         const extra = h('div');
         let titleTouched = !!d || !!pre.title;
@@ -919,8 +1089,15 @@
             if (st.file) {
                 const thumb = h('div', { class: 'tile' }, h('div', { class: 'thumb' }, h('img', { class: 'cover', src: URL.createObjectURL(st.file), alt: '' })));
                 preview.append(thumb);
-            } else if (d?.thumb && st.mode !== 'none') {
+            } else if (d?.thumb && st.mode !== 'none' && st.mode !== 'icon') {
                 preview.append(h('div', { class: 'tile' }, h('div', { class: 'thumb' }, h('img', { class: fitOf(d), src: d.thumb, alt: '' }))));
+                if (d.thumb_mode !== 'icon' && !(d.thumb || '').endsWith('.svg') && d.thumb_status === 'ok') {
+                    preview.append(h('div', { class: 'actions' },
+                        h('button', { type: 'button', class: 'btn', onclick: () => cropDialog(d, renderPreview) }, icon('crop'), ' Zuschneiden'),
+                        d.crop ? h('button', { type: 'button', class: 'btn', text: 'Zuschnitt zurücksetzen', onclick: async () => {
+                            try { applyDial(d, await api('DELETE', `/dials/${d.id}/crop`)); renderPreview(); } catch (err) { toast(err.message); }
+                        } }) : null));
+                }
             }
         };
         const renderExtra = () => {
@@ -928,6 +1105,8 @@
             if (st.mode === 'url') {
                 extra.append(h('label', { class: 'field' }, h('span', { text: 'Bild-URL' }),
                     h('input', { type: 'url', value: st.src, placeholder: 'https://…/logo.png', oninput: (e) => { st.src = e.target.value; } })));
+            } else if (st.mode === 'icon') {
+                extra.append(iconPicker(st));
             } else if (st.mode === 'upload') {
                 extra.append(h('label', { class: 'field' }, h('span', { text: 'Bilddatei (max. 12 MB)' }),
                     h('input', { type: 'file', accept: 'image/*', onchange: (e) => { st.file = e.target.files[0] || null; renderPreview(); } })));
@@ -944,7 +1123,7 @@
         };
         const modes = h('div', { class: 'modes' });
         const renderModes = () => modes.replaceChildren(...MODES.map(([m, ic, label]) => h('button', {
-            type: 'button', class: 'mode' + (st.mode === m ? ' on' : ''), onclick: () => { st.mode = m; renderModes(); renderExtra(); },
+            type: 'button', class: 'mode' + (st.mode === m ? ' on' : ''), onclick: () => { st.mode = m; renderModes(); renderExtra(); renderPreview(); },
         }, icon(ic), label)));
 
         const save = async (btn) => {
@@ -954,6 +1133,10 @@
                 const payload = { title: st.title, url: st.url, group_id: Number(st.group_id), section_id: Number(st.section_id) || undefined, thumb_mode: st.mode, fit: st.fit, no_check: st.no_check,
                     tags: st.tags, note: st.note, color: st.color || null, badge: st.badge, badge_color: st.badge_color || null };
                 if (st.mode === 'url') payload.thumb_src = st.src;
+                if (st.mode === 'icon') {
+                    if (!st.icon) throw new Error('Bitte ein Icon wählen.');
+                    payload.icon = st.icon;
+                }
                 if (st.mode === 'upload' && !st.file && !d?.thumb) throw new Error('Bitte eine Bilddatei wählen.');
                 const saved = d ? await api('PUT', `/dials/${d.id}`, payload) : await api('POST', '/dials', payload);
                 if (st.mode === 'upload' && st.file) {

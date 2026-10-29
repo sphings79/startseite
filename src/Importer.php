@@ -142,8 +142,8 @@ final class Importer
 
     private static function wipe(): void
     {
-        foreach (Db::all('SELECT thumb_file FROM dials') as $d) {
-            Thumbs::deleteFile($d['thumb_file']);
+        foreach (Db::all('SELECT thumb_file, thumb_orig FROM dials') as $d) {
+            Thumbs::dropFiles($d);
         }
         Db::run('DELETE FROM dials');
         Db::run('DELETE FROM sections');
@@ -193,12 +193,12 @@ final class Importer
                     continue;
                 }
                 $file = null;
-                if ($zip && !empty($d['thumb_file']) && preg_match('/^[a-f0-9]{24}\.(webp|png|jpg)$/', $d['thumb_file'])) {
+                if ($zip && !empty($d['thumb_file']) && preg_match('/^[a-f0-9]{24}\.(webp|png|jpg|svg)$/', $d['thumb_file'])) {
                     $file = self::copyMedia($zip, $d['thumb_file']);
                 }
                 $url = Api::normalizeUrl($d['url']);
-                $mode = in_array($d['thumb_mode'], ['auto', 'screenshot', 'url', 'upload', 'none'], true) ? $d['thumb_mode'] : 'auto';
-                $status = $file ? 'ok' : (in_array($mode, ['auto', 'screenshot', 'url'], true) ? 'pending' : 'none');
+                $mode = in_array($d['thumb_mode'], ['auto', 'screenshot', 'url', 'upload', 'none', 'icon'], true) ? $d['thumb_mode'] : 'auto';
+                $status = $file ? 'ok' : (in_array($mode, ['auto', 'screenshot', 'url', 'icon'], true) ? 'pending' : 'none');
                 $x = self::extras($d);
                 Db::run('INSERT INTO dials (group_id, position, title, url, thumb_mode, thumb_src, thumb_file, thumb_kind, fit, thumb_status, visits, last_visit, created_at, no_check, tags, note, color, badge, badge_color, keep, section_id)
                          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
@@ -255,8 +255,8 @@ final class Importer
     private static function copyMedia(ZipArchive $zip, string $name): ?string
     {
         $bytes = $zip->getFromName('media/' . $name);
-        if ($bytes === false) {
-            return null;
+        if ($bytes === false || (str_ends_with($name, '.svg') && !Thumbs::isIconSvg($bytes))) {
+            return null; // only icons written by this app are accepted as SVG
         }
         $new = bin2hex(random_bytes(12)) . substr($name, strrpos($name, '.'));
         file_put_contents(Db::mediaDir() . '/' . $new, $bytes);
