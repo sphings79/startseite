@@ -1134,10 +1134,10 @@
                     ? 'Auf diesem Server ist kein Chromium installiert – Screenshots sind nicht verfügbar.'
                     : 'Ohne Chromium gibt es nur Logos; Seiten ohne Logo bekommen eine Buchstaben-Kachel.' }));
             }
-            if (['url', 'upload'].includes(st.mode)) {
+            if (['auto', 'screenshot', 'url', 'upload'].includes(st.mode)) {
                 extra.append(h('label', { class: 'field' }, h('span', { text: 'Darstellung' }),
                     h('select', { onchange: (e) => { st.fit = e.target.value; } },
-                        [['auto', 'Automatisch'], ['cover', 'Füllen'], ['contain', 'Einpassen']].map(([v, t]) => h('option', { value: v, text: t, selected: st.fit === v })))));
+                        [['auto', 'Automatisch'], ['cover', 'Füllen (beschneidet)'], ['contain', 'Einpassen (mit Rand)']].map(([v, t]) => h('option', { value: v, text: t, selected: st.fit === v })))));
             }
         };
         const modes = h('div', { class: 'modes' });
