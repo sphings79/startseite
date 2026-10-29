@@ -162,9 +162,10 @@ button, input, select { font: inherit; color: inherit; }
 .sec .gear svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .sec.auto { flex: 0 0 auto; max-width: 100%; width: calc(var(--n, 4) * var(--tile-w, 104px) + (var(--n, 4) - 1) * var(--gap) + 2 * var(--sec-pad, 0px) + 2 * var(--sec-bw, 0px)); }
 .sec.auto.islist { width: calc(var(--n, 1) * 280px + (var(--n, 1) - 1) * 8px + 2 * var(--sec-pad, 0px) + 2 * var(--sec-bw, 0px)); }
-#grid.packed { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--gap); row-gap: 0; grid-auto-rows: 1px; align-items: start; }
-#grid.packed > .sec, #grid.packed > .sec.auto { width: auto; max-width: none; flex: none; }
-#grid.packed > .add-section { grid-column: 1 / -1; margin-top: 0; }
+#grid.packed { display: grid; grid-template-columns: repeat(48, minmax(0, 1fr)); column-gap: 0; row-gap: 0; grid-auto-rows: 1px; align-items: start; margin-right: calc(var(--gap) * -1); }
+#grid.packed > .sec, #grid.packed > .sec.auto { width: auto; max-width: none; flex: none; margin-right: var(--gap); }
+#grid.packed > .sec.auto { justify-self: start; }
+#grid.packed > .add-section { grid-column: 1 / -1; margin: 0 var(--gap) 0 0; }
 @media (min-width: 641px) { .sbody:not(.listv) { grid-template-columns: repeat(auto-fill, var(--tile-w, 104px)); } }
 .empty.small { padding: 18px 0; font-size: .85rem; grid-column: 1 / -1; }
 .add-section { flex: 1 1 100%; background: none; border: 1px dashed var(--border); border-radius: 12px; padding: 10px; color: var(--muted); cursor: pointer; opacity: .6; }

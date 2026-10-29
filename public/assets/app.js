@@ -582,25 +582,26 @@
         const min = parseFloat(getComputedStyle($('#content')).getPropertyValue('--tile-min')) || 104;
         const cols = S.settings.columns;
         const gap = S.settings.spacing;
-        const w = Math.max(min, Math.floor((grid.clientWidth - (cols - 1) * gap) / cols));
+        const avail = grid.clientWidth - (grid.classList.contains('packed') ? gap : 0);
+        const w = Math.max(min, Math.floor((avail - (cols - 1) * gap) / cols));
         grid.style.setProperty('--tile-w', w + 'px');
     }
 
-    /** Gap-free layout: 12 grid columns, every section goes to the highest free spot where it fits (rows are 1 px tall). */
+    /** Gap-free layout: 48 fine grid columns, every section goes to the highest free spot where it fits (rows are 1 px tall). */
     function packSections() {
         const grid = $('#grid');
         if (!grid || !grid.classList.contains('packed') || drag?.active) return;
         const gap = S.settings.spacing;
-        const colW = (grid.clientWidth - 11 * gap) / 12;
+        const unit = grid.clientWidth / 48; // the grid is one gap wider than the page; every section keeps a gap as its right margin
         const secs = [...grid.querySelectorAll(':scope > .sec')];
-        const spans = secs.map((el) => (el.dataset.px ? Math.min(12, Math.max(1, Math.ceil((Number(el.dataset.px) + gap) / (colW + gap)))) : Number(el.dataset.span) || 12));
-        secs.forEach((el, i) => { el.style.gridColumn = `span ${spans[i]}`; el.style.gridRow = 'auto'; });
+        const spans = secs.map((el) => (el.dataset.px ? Math.min(48, Math.max(1, Math.ceil((Number(el.dataset.px) + gap) / unit))) : (Number(el.dataset.span) || 12) * 4));
+        secs.forEach((el, i) => { el.style.gridColumn = `span ${spans[i]}`; el.style.gridRow = 'auto'; el.style.width = el.dataset.px ? el.dataset.px + 'px' : ''; });
         const heights = secs.map((el) => Math.ceil(el.getBoundingClientRect().height) + gap);
-        const col = new Array(12).fill(0);
+        const col = new Array(48).fill(0);
         secs.forEach((el, i) => {
             let best = 0;
             let bestTop = Infinity;
-            for (let s = 0; s + spans[i] <= 12; s++) {
+            for (let s = 0; s + spans[i] <= 48; s++) {
                 const top = Math.max(...col.slice(s, s + spans[i]));
                 if (top < bestTop) { bestTop = top; best = s; }
             }
