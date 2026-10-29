@@ -98,6 +98,7 @@ Thumbs::crop($cid, 0.25, 0.0, 0.5, 1.0);
 $c = Db::one('SELECT * FROM dials WHERE id = ?', [$cid]);
 $cut = getimagesize(Db::mediaDir() . '/' . $c['thumb_file']);
 T::check('crop makes a new file and keeps the original', $c['thumb_file'] !== $imgFile && $c['thumb_orig'] === $imgFile && is_file(Db::mediaDir() . '/' . $imgFile));
+T::check('crop keeps the kind of the original', $c['thumb_kind'] === 'shot' && $c['thumb_orig_kind'] === 'shot');
 T::check('cropped image has the chosen size', $cut[0] === 100 && $cut[1] === 100, $cut[0] . 'x' . $cut[1]);
 Thumbs::crop($cid, 0.0, 0.0, 0.5, 0.5);
 $c2 = Db::one('SELECT * FROM dials WHERE id = ?', [$cid]);

@@ -218,6 +218,13 @@ SQL);
             $pdo->exec('PRAGMA user_version=7');
             $pdo->exec('COMMIT');
         }
+        if ($version < 8) {
+            // Cropped images used to be marked as screenshots (no margin); they keep the kind of the original now.
+            $pdo->exec('BEGIN');
+            $pdo->exec('UPDATE dials SET thumb_kind = thumb_orig_kind WHERE thumb_orig IS NOT NULL AND thumb_orig_kind IS NOT NULL');
+            $pdo->exec('PRAGMA user_version=8');
+            $pdo->exec('COMMIT');
+        }
     }
 
     /** @return list<array<string,mixed>> */

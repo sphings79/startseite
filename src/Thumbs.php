@@ -163,10 +163,11 @@ final class Thumbs
         $file = self::store($cut, true);
         if ($d['thumb_orig']) {
             self::deleteFile($d['thumb_file']); // the previous cut
-            Db::run('UPDATE dials SET thumb_file = ?, thumb_kind = ?, thumb_crop = ? WHERE id = ?', [$file, 'shot', json_encode([$x, $y, $w, $h]), $id]);
+            Db::run('UPDATE dials SET thumb_file = ?, thumb_kind = thumb_orig_kind, thumb_crop = ? WHERE id = ?', [$file, json_encode([$x, $y, $w, $h]), $id]);
         } else {
-            Db::run('UPDATE dials SET thumb_file = ?, thumb_kind = ?, thumb_orig = ?, thumb_orig_kind = ?, thumb_crop = ? WHERE id = ?',
-                [$file, 'shot', $d['thumb_file'], $d['thumb_kind'], json_encode([$x, $y, $w, $h]), $id]);
+            // the kind stays: a cropped logo keeps its margin like every other logo tile
+            Db::run('UPDATE dials SET thumb_file = ?, thumb_orig = ?, thumb_orig_kind = ?, thumb_crop = ? WHERE id = ?',
+                [$file, $d['thumb_file'], $d['thumb_kind'], json_encode([$x, $y, $w, $h]), $id]);
         }
     }
 
