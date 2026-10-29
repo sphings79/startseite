@@ -671,16 +671,32 @@
         const sel = (label, key, options, num = false) => h('label', { class: 'field' }, h('span', { text: label }),
             h('select', { onchange: (e) => { st[key] = num ? Number(e.target.value) : e.target.value; } },
                 options.map(([v, t]) => h('option', { value: v, text: t, selected: String(st[key]) === String(v) }))));
-        const num = (label, key, min, max) => h('label', { class: 'field' }, h('span', { text: label }),
-            h('input', { type: 'number', min, max, value: st[key], oninput: (e) => { st[key] = e.target.value === '' ? 0 : Number(e.target.value); } }));
-        const colorBox = (label, key, fallback) => {
-            const inp = h('input', { type: 'color', value: st[key] || fallback, disabled: !st[key], oninput: (e) => { st[key] = e.target.value; } });
-            const none = h('input', { type: 'checkbox', checked: !st[key], onchange: (e) => { st[key] = e.target.checked ? '' : inp.value; inp.disabled = e.target.checked; } });
+        const els = {}; // inputs by key, so colour and width of the frame can follow each other
+        const num = (label, key, min, max, after) => {
+            els[key] = h('input', { type: 'number', min, max, value: st[key], oninput: (e) => { st[key] = e.target.value === '' ? 0 : Number(e.target.value); after?.(); } });
+            return h('label', { class: 'field' }, h('span', { text: label }), els[key]);
+        };
+        const colorBox = (label, key, fallback, after) => {
+            const inp = h('input', { type: 'color', value: st[key] || fallback, disabled: !st[key], oninput: (e) => { st[key] = e.target.value; after?.(); } });
+            const none = h('input', { type: 'checkbox', checked: !st[key], onchange: (e) => { st[key] = e.target.checked ? '' : inp.value; inp.disabled = e.target.checked; after?.(); } });
+            els[key] = { inp, none };
             return h('div', { class: 'field' }, h('span', { text: label }), h('div', { class: 'set inline' }, inp, h('label', { class: 'chk-box' }, none, 'keine')));
+        };
+        // A frame needs both a colour and a width: choosing one fills in the other, otherwise nothing would show.
+        const frameColor = () => {
+            if (st.border_color && !st.border_width) { st.border_width = 2; els.border_width.value = 2; }
+        };
+        const frameWidth = () => {
+            if (st.border_width > 0 && !st.border_color) {
+                st.border_color = els.border_color.inp.value;
+                els.border_color.inp.disabled = false;
+                els.border_color.none.checked = false;
+            }
         };
         const PALETTE = ['#e03131', '#f08c00', '#2f9e44', '#0c8599', '#1971c2', '#7048e8', '#c2255c', '#495057'];
         const pal = h('div', { class: 'pal' }, PALETTE.map((c) => h('button', { type: 'button', class: 'swatch', 'aria-label': c, onclick: () => {
             st.bg_color = c; st.border_color = c;
+            frameColor();
             [...dlg.querySelectorAll('input[type=color]')].forEach((i) => { i.value = c; i.disabled = false; });
             dlg.querySelectorAll('.set.inline input[type=checkbox]').forEach((i) => { i.checked = false; });
         } }, (() => { const i = h('i'); i.style.background = c; return i; })())));
@@ -725,7 +741,7 @@
                 h('span', { class: 'lbl', text: 'Aussehen' }),
                 pal,
                 h('div', { class: 'row' }, colorBox('Hintergrund', 'bg_color', '#1971c2'), num('Deckkraft (0–100 %)', 'bg_opacity', 0, 100)),
-                h('div', { class: 'row' }, colorBox('Rahmenfarbe', 'border_color', '#74c0fc'), num('Rahmenstärke (0–8 px)', 'border_width', 0, 8)),
+                h('div', { class: 'row' }, colorBox('Rahmenfarbe', 'border_color', '#74c0fc', frameColor), num('Rahmenstärke (0–8 px)', 'border_width', 0, 8, frameWidth)),
                 h('div', { class: 'row' }, num('Eckenradius (0–40 px)', 'radius', 0, 40), num('Innenabstand (0–40 px)', 'padding', 0, 40)),
                 sec ? h('div', { class: 'actions' },
                     h('button', { type: 'button', class: 'btn', text: 'Nach vorn', onclick: () => move(-1) }),
