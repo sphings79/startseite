@@ -28,6 +28,7 @@ final class Settings
         'show_add_button'    => ['bool', true],
         'show_web_search'    => ['bool', false],
         'mobile_list'        => ['bool', false],
+        'pack_sections'      => ['bool', false],
         'auto_top'           => ['bool', false],
         'auto_recent'        => ['bool', false],
         'auto_count'         => ['int', 12, 3, 50],

@@ -36,6 +36,8 @@ T::check('bare host gets https', Api::normalizeUrl('example.org/a') === 'https:/
 T::throws('javascript: URL rejected', fn () => Api::normalizeUrl('javascript:alert(1)'), InvalidArgumentException::class);
 T::throws('ftp: URL rejected', fn () => Api::normalizeUrl('ftp://example.org'), InvalidArgumentException::class);
 
+T::check('gap-free layout is a known boolean setting that is off by default', Settings::normalize('pack_sections', true) === true && Settings::get('pack_sections') === false);
+
 T::section('Link check rules');
 T::check('exact host rule', LinkCheck::ruleMatches('proxy.example.de', 'proxy.example.de'));
 T::check('wildcard rule', LinkCheck::ruleMatches('a.intern.example.de', '*.intern.example.de'));

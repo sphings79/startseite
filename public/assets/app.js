@@ -490,6 +490,13 @@
         if (!auto) el.style.setProperty('--frac', String(sec.width / 100));
         if (auto) el.style.setProperty('--n', String(list ? sec.cols : Math.max(1, Math.min(sec.tile_cols, items.length + (first && S.settings.show_add_button ? 1 : 0)))));
         el.style.setProperty('--sec-bw', (sec.border_color ? sec.border_width : 0) + 'px');
+        // used by the gap-free layout: grid columns of a fixed width, or the pixel width of an automatic one
+        el.dataset.span = String({ 25: 3, 33: 4, 50: 6, 67: 8, 75: 9, 100: 12 }[sec.width] || 12);
+        if (auto) {
+            const n = Number(el.style.getPropertyValue('--n'));
+            const tw = sec.tile_size ? SIZES[sec.tile_size] : parseFloat($('#grid').style.getPropertyValue('--tile-w')) || 104;
+            el.dataset.px = String((list ? n * 280 + (n - 1) * 8 : n * tw + (n - 1) * S.settings.spacing) + 2 * sec.padding + 2 * (sec.border_color ? sec.border_width : 0));
+        }
         if (sec.tile_size) el.style.setProperty('--tile-w', SIZES[sec.tile_size] + 'px');
         if (sec.bg_color) el.style.setProperty('--sec-bg', rgba(sec.bg_color, sec.bg_opacity));
         if (sec.border_width && sec.border_color) el.style.setProperty('--sec-border', `${sec.border_width}px solid ${sec.border_color}`);
@@ -542,7 +549,7 @@
             const sideBySide = r.width < over.parentNode.getBoundingClientRect().width * 0.9;
             const before = sideBySide ? ev.clientX < r.left + r.width / 2 : ev.clientY < r.top + r.height / 2;
             const ref = before ? over : over.nextElementSibling;
-            if (ref !== el && ref !== el.nextElementSibling) over.parentNode.insertBefore(el, ref);
+            if (ref !== el && ref !== el.nextElementSibling) { over.parentNode.insertBefore(el, ref); schedulePack(); }
         };
         const end = async (ev, cancelled) => {
             clearInterval(scroller);
@@ -579,10 +586,41 @@
         grid.style.setProperty('--tile-w', w + 'px');
     }
 
+    /** Gap-free layout: 12 grid columns, every section goes to the highest free spot where it fits (rows are 1 px tall). */
+    function packSections() {
+        const grid = $('#grid');
+        if (!grid || !grid.classList.contains('packed') || drag?.active) return;
+        const gap = S.settings.spacing;
+        const colW = (grid.clientWidth - 11 * gap) / 12;
+        const secs = [...grid.querySelectorAll(':scope > .sec')];
+        const spans = secs.map((el) => (el.dataset.px ? Math.min(12, Math.max(1, Math.ceil((Number(el.dataset.px) + gap) / (colW + gap)))) : Number(el.dataset.span) || 12));
+        secs.forEach((el, i) => { el.style.gridColumn = `span ${spans[i]}`; el.style.gridRow = 'auto'; });
+        const heights = secs.map((el) => Math.ceil(el.getBoundingClientRect().height) + gap);
+        const col = new Array(12).fill(0);
+        secs.forEach((el, i) => {
+            let best = 0;
+            let bestTop = Infinity;
+            for (let s = 0; s + spans[i] <= 12; s++) {
+                const top = Math.max(...col.slice(s, s + spans[i]));
+                if (top < bestTop) { bestTop = top; best = s; }
+            }
+            el.style.gridColumn = `${best + 1} / span ${spans[i]}`;
+            el.style.gridRow = `${bestTop + 1} / span ${heights[i]}`;
+            for (let c = best; c < best + spans[i]; c++) col[c] = bestTop + heights[i];
+        });
+        const add = grid.querySelector(':scope > .add-section');
+        if (add) add.style.gridRow = `${Math.max(...col) + 1} / span 1`;
+    }
+    let packTimer = 0;
+    const schedulePack = () => { cancelAnimationFrame(packTimer); packTimer = requestAnimationFrame(packSections); };
+    const sectionObserver = window.ResizeObserver ? new ResizeObserver(schedulePack) : null;
+
     function renderGrid() {
         const grid = $('#grid');
         if (!grid) return;
         updateTileWidth();
+        sectionObserver?.disconnect();
+        grid.classList.toggle('packed', S.settings.pack_sections && !phone.matches);
         grid.replaceChildren();
         renderTagbar();
         if (searching()) {
@@ -617,6 +655,10 @@
         const secs = sectionsOf(ui.group);
         secs.forEach((sec, i) => grid.append(sectionEl(sec, dials.filter((d) => secOf(d)?.id === sec.id), i === 0)));
         grid.append(h('button', { type: 'button', class: 'add-section', text: '+ Abschnitt', onclick: () => editSection(null) }));
+        if (grid.classList.contains('packed')) {
+            packSections();
+            grid.querySelectorAll(':scope > .sec').forEach((el) => sectionObserver?.observe(el));
+        }
     }
 
     // Create or edit a section; the look is stored per section (no light/dark pairs: use opacity to stay readable on both).
@@ -1379,6 +1421,8 @@
                     h('h3', { text: 'Darstellung' }),
                     toggle('Titel anzeigen', 'show_title'),
                     toggle('Handy: Liste statt Kacheln', 'mobile_list'),
+                    toggle('Abschnitte lückenlos anordnen (Desktop)', 'pack_sections'),
+                    h('p', { class: 'msg', text: 'An: Abschnitte rücken in freie Lücken, auch wenn ein späterer Abschnitt dadurch weiter nach oben wandert. Aus: Abschnitte stehen Zeile für Zeile in der eingestellten Reihenfolge. Die automatische Breite wird dabei auf ein 12er-Raster gerundet.' }),
                     toggle('Besuchszähler anzeigen', 'show_visits'),
                     toggle('Links in neuem Tab öffnen', 'open_new_tab'),
                     toggle('„+“-Kachel anzeigen', 'show_add_button'),
@@ -1913,7 +1957,7 @@
     applyTheme();
     renderTabs();
     renderGrid();
-    if (window.ResizeObserver) { let last = 0; new ResizeObserver(() => { const w = $('#grid')?.clientWidth || 0; if (w !== last) { last = w; updateTileWidth(); } }).observe($('#content')); }
+    if (window.ResizeObserver) { let last = 0; new ResizeObserver(() => { const w = $('#grid')?.clientWidth || 0; if (w !== last) { last = w; updateTileWidth(); schedulePack(); } }).observe($('#content')); }
     schedulePoll();
     if ('serviceWorker' in navigator) navigator.serviceWorker.register(S.base + '/sw.js', { scope: S.base + '/' }).catch(() => {});
 })();

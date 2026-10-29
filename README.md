@@ -115,6 +115,7 @@ If your bookmarks point to internal services (UniFi, Pi-hole, ...) and the serve
 ### Sections
 
 Open a tab and use **+ Abschnitt** below the tiles, or the gear on an existing section. New tabs and existing installations start with one section without title or frame, so nothing changes until you add more.
+**Settings → Lesezeichen → Abschnitte lückenlos anordnen** (off by default) packs sections into free gaps instead of row by row.
 Reorder sections by the grip next to the gear or under Settings → Groups. If **Phone: list instead of tiles** is on, every section is shown as a list on phones, whatever it uses on the desktop.
 
 ### Link check

@@ -115,6 +115,7 @@ Zeigen die Lesezeichen auf interne Dienste (UniFi, Pi-hole, …) und der Server 
 ### Abschnitte
 
 Tab öffnen und **+ Abschnitt** unter den Kacheln nutzen, oder das Zahnrad an einem vorhandenen Abschnitt. Neue Tabs und bestehende Installationen starten mit einem Abschnitt ohne Titel und Rahmen, es ändert sich also nichts, bis du weitere anlegst.
+**Einstellungen → Lesezeichen → Abschnitte lückenlos anordnen** (standardmäßig aus) packt Abschnitte in freie Lücken statt Zeile für Zeile.
 Die Reihenfolge änderst du am Griff neben dem Zahnrad oder unter Einstellungen → Gruppen. Ist **Handy: Liste statt Kacheln** an, erscheint am Handy jeder Abschnitt als Liste, egal was er am Desktop zeigt.
 
 ### Link-Prüfung
