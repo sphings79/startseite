@@ -525,12 +525,13 @@
         if (e.pointerType === 'mouse' && e.button !== 0) return;
         e.preventDefault();
         e.stopPropagation();
-        const grip = e.currentTarget;
-        grip.setPointerCapture(e.pointerId);
+        // Listeners sit on the document: moving the section in the DOM would drop a pointer capture held by the grip.
+        const pid = e.pointerId;
         el.classList.add('sec-dragging');
         let y = e.clientY;
         const scroller = setInterval(() => { if (y < 90) scrollBy(0, -14); else if (y > innerHeight - 90) scrollBy(0, 14); }, 16);
         const move = (ev) => {
+            if (ev.pointerId !== pid) return;
             y = ev.clientY;
             const over = document.elementsFromPoint(ev.clientX, ev.clientY).map((n) => n.closest?.('.sec[data-sid]')).find((n) => n && n !== el);
             if (!over) return;
@@ -542,9 +543,9 @@
         };
         const end = async (ev, cancelled) => {
             clearInterval(scroller);
-            grip.removeEventListener('pointermove', move);
-            grip.removeEventListener('pointerup', up);
-            grip.removeEventListener('pointercancel', cancel);
+            document.removeEventListener('pointermove', move);
+            document.removeEventListener('pointerup', up);
+            document.removeEventListener('pointercancel', cancel);
             el.classList.remove('sec-dragging');
             const ids = [...document.querySelectorAll('#grid .sec[data-sid]')].map((n) => Number(n.dataset.sid));
             const gid = realGroupId();
@@ -553,14 +554,15 @@
             try {
                 await api('POST', '/sections/order', { group_id: gid, ids });
                 ids.forEach((id, i) => { S.sections.find((x) => x.id === id).position = i; });
+                toast('Reihenfolge gespeichert');
             } catch (err) { toast(err.message); }
             renderGrid();
         };
-        const up = (ev) => end(ev, false);
-        const cancel = (ev) => end(ev, true);
-        grip.addEventListener('pointermove', move);
-        grip.addEventListener('pointerup', up);
-        grip.addEventListener('pointercancel', cancel);
+        const up = (ev) => { if (ev.pointerId === pid) end(ev, false); };
+        const cancel = (ev) => { if (ev.pointerId === pid) end(ev, true); };
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', up);
+        document.addEventListener('pointercancel', cancel);
     }
 
     function renderGrid() {
