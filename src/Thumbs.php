@@ -17,6 +17,10 @@ final class Thumbs
      */
     public static function ingest(string $bytes, string $forceKind = ''): array
     {
+        if (self::isSvg($bytes)) {
+            $bytes = self::rasterizeSvg($bytes);
+            $forceKind = $forceKind !== '' ? $forceKind : 'logo'; // vector artwork is a logo, whatever its proportions
+        }
         $info = @getimagesizefromstring($bytes);
         if (!$info || $info[0] < 1 || $info[1] < 1 || $info[0] * $info[1] > self::MAX_PIXELS) {
             throw new RuntimeException('Not a usable image');
@@ -241,11 +245,100 @@ final class Thumbs
     /** @return array{0:string,1:string} */
     public static function screenshot(string $url): array
     {
-        $bin = self::chromiumBinary();
-        if ($bin === null) {
+        if (self::chromiumBinary() === null) {
             throw new RuntimeException('Chromium not installed');
         }
         Net::checkTarget($url);
+        $im = self::scaleDown(self::chromiumShot($url, 1280, 800), 640, 400);
+        return [self::store($im, false), 'shot'];
+    }
+
+    // ---------- SVG ----------
+
+    public static function isSvg(string $bytes): bool
+    {
+        return (bool) preg_match('/^(?:\xEF\xBB\xBF)?\s*(?:<\?xml[^>]*>\s*)?(?:<!--.*?-->\s*|<!DOCTYPE[^>]*>\s*)*<svg[\s>]/is', substr($bytes, 0, 4096));
+    }
+
+    /**
+     * GD cannot read SVG, so Chromium draws it as an <img> (no scripts, no external requests). Headless screenshots have no
+     * alpha channel, so it is drawn once on black and once on white and the transparency is worked out from the difference.
+     * Returns PNG bytes, longest side 512 px.
+     */
+    public static function rasterizeSvg(string $svg): string
+    {
+        if (self::chromiumBinary() === null) {
+            throw new RuntimeException('SVG images need Chromium');
+        }
+        if (strlen($svg) > 2_000_000) {
+            throw new RuntimeException('SVG too large');
+        }
+        $w = $h = 0.0;
+        if (preg_match('/<svg\b[^>]*>/is', $svg, $tag)) {
+            $attr = static fn (string $n): ?string => preg_match('/\s' . $n . '\s*=\s*["\']([^"\']*)["\']/i', $tag[0], $m) ? trim($m[1]) : null;
+            if (($vb = $attr('viewBox')) !== null && preg_match('/^\S+[\s,]+\S+[\s,]+(\S+)[\s,]+(\S+)$/', $vb, $m)) {
+                [$w, $h] = [(float) $m[1], (float) $m[2]];
+            }
+            if ($w <= 0 || $h <= 0) {
+                foreach (['width' => &$w, 'height' => &$h] as $n => &$ref) {
+                    $v = $attr($n);
+                    $ref = $v !== null && preg_match('/^[\d.]+(px)?$/', $v) ? (float) $v : 0.0;
+                }
+                unset($ref);
+            }
+        }
+        if ($w <= 0 || $h <= 0) {
+            [$w, $h] = [512.0, 512.0];
+        }
+        $f = 512 / max($w, $h);
+        [$pw, $ph] = [max(1, (int) round($w * $f)), max(1, (int) round($h * $f))];
+
+        $base = sys_get_temp_dir();
+        if (strlen($base) > 40 || !is_writable($base)) {
+            $base = Config::get('data_dir') . '/tmp';
+        }
+        $shots = [];
+        foreach (['#000', '#fff'] as $bg) {
+            $page = $base . '/sv-' . bin2hex(random_bytes(4)) . '.html';
+            file_put_contents($page, '<!doctype html><meta charset="utf-8"><body style="margin:0;background:' . $bg . '"><img alt="" style="display:block;width:' . $pw . 'px;height:' . $ph
+                . 'px" src="data:image/svg+xml;base64,' . base64_encode($svg) . '">');
+            try {
+                $shots[] = self::chromiumShot('file://' . $page, $pw, $ph);
+            } finally {
+                @unlink($page);
+            }
+        }
+        [$onBlack, $onWhite] = $shots;
+        $out = imagecreatetruecolor($pw, $ph);
+        imagealphablending($out, false);
+        imagesavealpha($out, true);
+        for ($y = 0; $y < $ph; $y++) {
+            for ($x = 0; $x < $pw; $x++) {
+                $b = imagecolorat($onBlack, $x, $y);
+                $w = imagecolorat($onWhite, $x, $y);
+                $diff = (($w >> 16 & 255) - ($b >> 16 & 255)) + (($w >> 8 & 255) - ($b >> 8 & 255)) + (($w & 255) - ($b & 255));
+                $a = max(0.0, min(1.0, 1 - $diff / 765));
+                if ($a < 0.004) {
+                    imagesetpixel($out, $x, $y, 0x7F000000);
+                    continue;
+                }
+                $r = min(255, (int) round(($b >> 16 & 255) / $a));
+                $g = min(255, (int) round(($b >> 8 & 255) / $a));
+                $bl = min(255, (int) round(($b & 255) / $a));
+                imagesetpixel($out, $x, $y, ((127 - (int) round($a * 127)) << 24) | ($r << 16) | ($g << 8) | $bl);
+            }
+        }
+        ob_start();
+        imagepng($out);
+        return (string) ob_get_clean();
+    }
+
+    // ---------- headless Chromium ----------
+
+    /** Loads $url in headless Chromium at the given viewport and returns the screenshot. */
+    private static function chromiumShot(string $url, int $width, int $height): GdImage
+    {
+        $bin = self::chromiumBinary() ?? throw new RuntimeException('Chromium not installed');
 
         // Chromium creates a unix socket below the profile dir; sun_path is limited to ~107 bytes, so keep this path short.
         $base = sys_get_temp_dir();
@@ -263,7 +356,7 @@ final class Thumbs
         $cmd = array_merge($prefix, [
             $bin, '--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run', '--no-default-browser-check',
             '--disable-dev-shm-usage', '--disable-extensions', '--mute-audio', '--force-device-scale-factor=1',
-            '--user-data-dir=' . $work . '/profile', '--window-size=1280,800', '--virtual-time-budget=8000',
+            '--user-data-dir=' . $work . '/profile', '--window-size=' . $width . ',' . $height, '--virtual-time-budget=8000',
             '--screenshot=' . $png,
         ], (array) Config::get('chromium_flags'), [$url]);
 
@@ -283,7 +376,7 @@ final class Thumbs
             }
             proc_close($proc);
 
-            if (!is_file($png) || filesize($png) < 500) {
+            if (!is_file($png) || filesize($png) < 100) {
                 $lines = array_filter(explode("\n", (string) @file_get_contents($work . '/err.log')),
                     static fn ($l) => $l !== '' && !str_contains($l, 'dbus') && !str_contains($l, 'DBus'));
                 throw new RuntimeException('Screenshot failed' . ($lines ? ': ' . mb_substr(trim(implode(' | ', array_slice(array_values($lines), 0, 3))), 0, 400) : ''));
@@ -292,8 +385,7 @@ final class Thumbs
             if (!$im) {
                 throw new RuntimeException('Screenshot unreadable');
             }
-            $im = self::scaleDown($im, 640, 400);
-            return [self::store($im, false), 'shot'];
+            return $im;
         } finally {
             self::rmTree($work);
         }

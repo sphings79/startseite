@@ -23,6 +23,12 @@ T::check('ES256 signature verifies', WebAuthn::verifySignature($data, $cdj, $sig
 T::check('tampered data fails', !WebAuthn::verifySignature($data . 'x', $cdj, $sig, $pem));
 T::throws('non-ES256 key is rejected', fn () => WebAuthn::coseToPem([1 => 3, 3 => -257]), RuntimeException::class);
 
+T::section('SVG detection');
+T::check('plain SVG is detected', Thumbs::isSvg('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>'));
+T::check('SVG with XML prolog and BOM is detected', Thumbs::isSvg("\xEF\xBB\xBF<?xml version=\"1.0\"?>\n<!-- c -->\n<svg xmlns=\"x\"/>"));
+T::check('HTML is not SVG', !Thumbs::isSvg('<html><body><svg></svg></body></html>'));
+T::check('PNG bytes are not SVG', !Thumbs::isSvg("\x89PNG\r\n\x1a\n"));
+
 T::section('Passwords and URLs');
 T::check('short password rejected', Auth::validatePassword('short') !== null);
 T::check('long password accepted', Auth::validatePassword('a-long-enough-password-123') === null);
