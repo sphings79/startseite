@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/sphings79/startseite/actions/workflows/ci.yml/badge.svg)](https://github.com/sphings79/startseite/actions/workflows/ci.yml)
 [![Docker image](https://github.com/sphings79/startseite/actions/workflows/docker.yml/badge.svg)](https://github.com/sphings79/startseite/actions/workflows/docker.yml)
-[![License: MIT](https://img.shields.io/github/license/sphings79/startseite)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/github/license/sphings79/startseite)](LICENSE)
 ![PHP 8.2+](https://img.shields.io/badge/PHP-8.2%2B-777bb4?logo=php&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-no%20server-003b57?logo=sqlite&logoColor=white)
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-sphings-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sphings)
@@ -189,7 +189,7 @@ Bug reports and ideas are welcome as [issues](../../issues).
 
 ## License
 
-[MIT](LICENSE). Third-party: the icon set `public/assets/vendor/mdi.json` comes from [@mdi/svg](https://github.com/Templarian/MaterialDesign-SVG) (Pictogrammers, Apache-2.0, see `public/assets/vendor/mdi-LICENSE.txt`). Code: `public/assets/vendor/qrcode.js` ([qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator), MIT) draws the QR code for the authenticator app in your browser.
+[GNU AGPL-3.0](LICENSE). If you run a modified version for others over a network, you must offer them its source code. Third-party: the icon set `public/assets/vendor/mdi.json` comes from [@mdi/svg](https://github.com/Templarian/MaterialDesign-SVG) (Pictogrammers, Apache-2.0, compatible with the AGPL, see `public/assets/vendor/mdi-LICENSE.txt`). Code: `public/assets/vendor/qrcode.js` ([qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator), MIT) draws the QR code for the authenticator app in your browser.
 
 ---
 
