@@ -2118,8 +2118,8 @@
             text = (path + (path && query ? '?' : '') + query).trim();
         } catch (e) { text = ''; }
         if (text) {
-            history.replaceState(null, '', (S.base || '') + '/');
-            openWeb(webTarget(text));
+            // Same tab on purpose: a new tab opened without a click is blocked by the browser; replace() also drops the typo from the history.
+            location.replace(webTarget(text));
             return;
         }
         // No on-screen keyboard popping up on touch devices.
