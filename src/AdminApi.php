@@ -11,7 +11,9 @@ final class AdminApi
         try {
             switch (true) {
                 case $method === 'GET' && $path === '/api/admin/overview':
-                    Http::json(['config' => AppConfig::forAdmin(), 'users' => Accounts::listUsers(), 'mail' => Mail::configured(), 'default_url' => WebAuthn::origin() . Http::basePath()]);
+                    Http::json(['config' => AppConfig::forAdmin(), 'mail' => Mail::configured(), 'default_url' => WebAuthn::origin() . Http::basePath()]);
+                case $method === 'GET' && $path === '/api/admin/users':
+                    Http::json(Accounts::listUsers((string) ($_GET['q'] ?? ''), (int) ($_GET['page'] ?? 1), (int) ($_GET['per'] ?? 25)));
                 case $method === 'PUT' && $path === '/api/admin/config':
                     AppConfig::update(Http::body());
                     Http::json(['ok' => true, 'config' => AppConfig::forAdmin(), 'mail' => Mail::configured()]);
@@ -32,7 +34,7 @@ final class AdminApi
                     } catch (RuntimeException $e) {
                         throw new InvalidArgumentException('Die Mail konnte nicht gesendet werden: ' . $e->getMessage());
                     }
-                    Http::json(['users' => Accounts::listUsers()]);
+                    Http::json(['ok' => true]);
                 case $method === 'POST' && preg_match('#^/api/admin/users/(\d+)/reset-mail$#', $path, $m):
                     try {
                         Accounts::adminResetMail((int) $m[1]);
@@ -42,16 +44,16 @@ final class AdminApi
                     Http::json(['ok' => true]);
                 case $method === 'POST' && preg_match('#^/api/admin/users/(\d+)/reset-2fa$#', $path, $m):
                     Mfa::reset((int) $m[1]);
-                    Http::json(['users' => Accounts::listUsers()]);
+                    Http::json(['ok' => true]);
                 case $method === 'POST' && preg_match('#^/api/admin/users/(\d+)/role$#', $path, $m):
                     Accounts::setRole($actor, (int) $m[1], (string) (Http::body()['role'] ?? 'user'));
-                    Http::json(['users' => Accounts::listUsers()]);
+                    Http::json(['ok' => true]);
                 case $method === 'POST' && preg_match('#^/api/admin/users/(\d+)/disable$#', $path, $m):
                     Accounts::setDisabled($actor, (int) $m[1], !empty(Http::body()['disabled']));
-                    Http::json(['users' => Accounts::listUsers()]);
+                    Http::json(['ok' => true]);
                 case $method === 'DELETE' && preg_match('#^/api/admin/users/(\d+)$#', $path, $m):
                     Accounts::delete($actor, (int) $m[1]);
-                    Http::json(['users' => Accounts::listUsers()]);
+                    Http::json(['ok' => true]);
 
                 case $method === 'GET' && preg_match('#^/api/admin/users/(\d+)/backups$#', $path, $m):
                     self::user((int) $m[1]);

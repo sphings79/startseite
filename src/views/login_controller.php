@@ -61,5 +61,5 @@ header('Cache-Control: no-store');
 $token = Auth::loginToken();
 $appName = (string) Settings::get('app_name');
 $noUser = Auth::userCount() === 0;
-$regOpen = AppConfig::get('reg_mode') !== 'off';
+$regOpen = AppConfig::get('reg_mode') !== 'off' && Mail::configured(); // sign-up needs the confirmation mail
 require APP_ROOT . '/src/views/' . ($mfa !== null ? 'login_mfa.php' : 'login.php');

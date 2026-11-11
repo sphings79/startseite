@@ -240,8 +240,7 @@
                 e.preventDefault();
                 const q = input.value.trim();
                 if (!q) return;
-                const url = currentEngine()[1][1].replace('%s', encodeURIComponent(q));
-                if (S.settings.open_new_tab) window.open(url, '_blank', 'noopener,noreferrer'); else location.href = url;
+                openWeb(webTarget(q));
                 input.value = '';
             },
         }, icon('search'), input, picker);
@@ -405,6 +404,17 @@
     }
 
     const searchUrl = (engine, text) => engine[1][1].replace('%s', encodeURIComponent(text));
+
+    /** Returns an http(s) URL if the text looks like a web address (scheme, www., host:port, IPv4, domain.tld), else null. */
+    function asWebAddress(text) {
+        const t = text.trim();
+        if (!t || /\s/.test(t)) return null;
+        if (/^https?:\/\/[^/?#\s]+/i.test(t)) return t;
+        if (/^(www\.|localhost\b|\d{1,3}(\.\d{1,3}){3}\b|([a-z0-9-]+\.)+[a-z]{2,24}(?=[:/?#]|$))/i.test(t) && /^[^/?#]+(:\d{1,5})?([/?#].*)?$/.test(t)) return 'https://' + t;
+        return null;
+    }
+    /** Web address -> open it directly; anything else -> search in the chosen engine. */
+    const webTarget = (text) => asWebAddress(text) || searchUrl(currentEngine(), text.trim());
     const openWeb = (url) => { if (S.settings.open_new_tab) window.open(url, '_blank', 'noopener,noreferrer'); else location.href = url; };
 
     /** Words must all appear in title, URL, tags, note or page description; "#tag" words match tags. */
@@ -456,7 +466,7 @@
             const tile = document.querySelectorAll('#grid .tile')[ui.sel];
             if (bang) openWeb(searchUrl(bang.engine, bang.text));
             else if (tile) tile.click();
-            else openWeb(searchUrl(currentEngine(), raw));
+            else openWeb(webTarget(raw));
             toggleSearch(false);
         }
     }
@@ -905,7 +915,8 @@
                 const ids = [...dialsOf(st.overTab).map((x) => x.id), st.d.id];
                 await api('POST', '/dials/order', { group_id: st.overTab, ids });
                 const target = sectionsOf(st.overTab)[0]?.id;
-                ids.forEach((id, i) => { const x = S.dials.find((y) => y.id === id); x.group_id = st.overTab; x.section_id = target; x.position = i; });
+                // Only the moved bookmark changes section; the others stay where they are (the server does the same).
+                ids.forEach((id, i) => { const x = S.dials.find((y) => y.id === id); x.group_id = st.overTab; x.position = i; if (id === st.d.id) x.section_id = target; });
                 toast('Verschoben nach „' + S.groups.find((g) => g.id === st.overTab).title + '“');
             } else if (reorderAllowed()) {
                 const sections = [...document.querySelectorAll('#grid .sec[data-sid]')].map((sec) => ({
@@ -1162,11 +1173,15 @@
             return row;
         };
 
+        // True once the image source was changed in this dialog: the stored thumbnail (and its crop) then belongs to the old image.
+        const imageChanged = () => st.mode !== (d?.thumb_mode || 'auto') || (st.mode === 'url' && st.src.trim() !== (d?.thumb_src || ''));
         const renderPreview = () => {
             preview.replaceChildren();
             if (st.file) {
                 const thumb = h('div', { class: 'tile' }, h('div', { class: 'thumb' }, h('img', { class: 'cover', src: URL.createObjectURL(st.file), alt: '' })));
                 preview.append(thumb);
+            } else if (d?.thumb && st.mode !== 'none' && st.mode !== 'icon' && imageChanged()) {
+                preview.append(h('p', { class: 'msg', text: 'Das neue Bild wird erst beim Speichern geladen. Danach lässt es sich zuschneiden.' }));
             } else if (d?.thumb && st.mode !== 'none' && st.mode !== 'icon') {
                 preview.append(h('div', { class: 'tile' }, h('div', { class: 'thumb' }, h('img', { class: fitOf(d), src: d.thumb, alt: '' }))));
                 if (d.thumb_mode !== 'icon' && !(d.thumb || '').endsWith('.svg') && d.thumb_status === 'ok') {
@@ -1182,7 +1197,7 @@
             extra.replaceChildren();
             if (st.mode === 'url') {
                 extra.append(h('label', { class: 'field' }, h('span', { text: 'Bild-URL' }),
-                    h('input', { type: 'url', value: st.src, placeholder: 'https://…/logo.png', oninput: (e) => { st.src = e.target.value; } })));
+                    h('input', { type: 'url', value: st.src, placeholder: 'https://…/logo.png', oninput: (e) => { st.src = e.target.value; renderPreview(); } })));
             } else if (st.mode === 'icon') {
                 extra.append(iconPicker(st));
             } else if (st.mode === 'upload') {
@@ -1333,7 +1348,7 @@
         const optsEl = h('div', { class: 'opts' });
         const navToggle = h('button', { type: 'button', class: 'opts-toggle', 'aria-label': 'Bereich wählen', onclick: () => optsEl.classList.toggle('nav-open') }, icon('menu'), navLabel);
         const SECTIONS = [['general', 'Allgemein'], ['themes', 'Themen'], ['bookmarks', 'Lesezeichen'], ['check', 'Prüfung'], ['cleanup', 'Aufräumen'], ['groups', 'Gruppen'], ['security', 'Sicherheit'], ['system', 'System'],
-            ...(S.user?.role === 'admin' ? [['users', 'Benutzer']] : [])];
+            ...(S.user?.role === 'admin' ? [['users', 'Benutzer'], ['mailreg', 'Mail & Registrierung']] : [])];
 
         const seg = (items, current, fn) => h('div', { class: 'seg' }, items.map(([v, t]) =>
             h('button', { type: 'button', class: current === v ? 'on' : '', text: t, onclick: () => fn(v) })));
@@ -1561,18 +1576,20 @@
                 ];
             },
             users: () => {
-                const box = h('div', {}, h('p', { class: 'msg', text: 'Lädt …' }));
                 const flash = h('p', { class: 'msg', hidden: true });
                 const say = (text, err = false) => { flash.hidden = false; flash.className = 'msg' + (err ? ' err' : ''); flash.textContent = text; };
                 const when = (t) => t ? new Date(t * 1000).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : 'nie';
                 const fmtSize = (n) => (n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
                 const act = async (fn, ok) => { try { await fn(); if (ok) say(ok); await load(); } catch (err) { say(err.message, true); } };
-                let data = null;
+                const q = { text: '', page: 1 };
                 const open = new Set();
+                const list = h('div', {}, h('p', { class: 'msg', text: 'Lädt …' }));
+                const pager = h('div', { class: 'actions' });
+                const count = h('h3', { text: 'Benutzer' });
 
                 const backupsOf = (u) => {
-                    const list = h('div', { class: 'clist' }, h('p', { class: 'msg', text: 'Lädt …' }));
-                    const draw = (backups) => list.replaceChildren(...(backups.length ? backups.map((b) => h('div', { class: 'crow nochk' },
+                    const blist = h('div', { class: 'clist' }, h('p', { class: 'msg', text: 'Lädt …' }));
+                    const draw = (backups) => blist.replaceChildren(...(backups.length ? backups.map((b) => h('div', { class: 'crow nochk' },
                         h('div', { class: 'ct', text: b.name }), h('div', { class: 'cr', text: `${new Date(b.time * 1000).toLocaleString('de-DE')} · ${fmtSize(b.size)}` }),
                         h('div', { class: 'ca' }, h('button', { class: 'btn danger', type: 'button', text: 'Für diesen Benutzer wiederherstellen', onclick: async () => {
                             if (!confirm(`Alle Daten von ${u.email} werden durch diese Sicherung ersetzt. Andere Benutzer bleiben unberührt. Fortfahren?`)) return;
@@ -1581,12 +1598,12 @@
                     api('GET', `/admin/users/${u.id}/backups`).then((r) => draw(r.backups)).catch((err) => say(err.message, true));
                     return h('div', {}, h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', text: 'Jetzt sichern', onclick: async () => {
                         try { draw((await api('POST', `/admin/users/${u.id}/backups`)).backups); } catch (err) { say(err.message, true); }
-                    } })), list);
+                    } })), blist);
                 };
 
                 const userRow = (u) => {
                     const me = u.id === S.user?.id;
-                    const det = h('details', { class: 'secgrp', open: open.has(u.id), ontoggle: (e) => { e.currentTarget.open ? open.add(u.id) : open.delete(u.id); } },
+                    return h('details', { class: 'secgrp', open: open.has(u.id), ontoggle: (e) => { e.currentTarget.open ? open.add(u.id) : open.delete(u.id); } },
                         h('summary', {}, h('span', { class: 'gname', text: u.email }),
                             h('span', { class: 'badge' + (u.role === 'admin' ? ' ok' : ''), text: u.role === 'admin' ? 'Admin' : 'Benutzer' }),
                             u.status !== 'active' ? h('span', { class: 'badge dead', text: u.status === 'pending' ? 'unbestätigt' : 'gesperrt' }) : null,
@@ -1600,26 +1617,49 @@
                                 h('button', { class: 'btn', type: 'button', text: u.status === 'disabled' ? 'Entsperren' : 'Sperren', disabled: me || u.status === 'pending', onclick: () => act(() => api('POST', `/admin/users/${u.id}/disable`, { disabled: u.status !== 'disabled' })) }),
                                 h('button', { class: 'btn danger', type: 'button', text: 'Löschen', disabled: me, onclick: () => { if (confirm(`${u.email} mit allen Lesezeichen, Bildern und Sicherungen unwiderruflich löschen?`)) act(() => api('DELETE', `/admin/users/${u.id}`), 'Gelöscht.'); } })),
                             h('span', { class: 'lbl', text: 'Sicherungen dieses Benutzers' }), backupsOf(u)));
-                    return det;
                 };
 
+                const load = async () => {
+                    try {
+                        const r = await api('GET', `/admin/users?q=${encodeURIComponent(q.text)}&page=${q.page}&per=25`);
+                        q.page = r.page;
+                        count.textContent = q.text ? `Benutzer (${r.total} Treffer)` : `Benutzer (${r.total})`;
+                        list.replaceChildren(...(r.users.length ? r.users.map(userRow) : [h('p', { class: 'msg', text: q.text ? 'Keine Benutzer gefunden.' : 'Keine Benutzer.' })]));
+                        pager.replaceChildren(...(r.pages > 1 ? [
+                            h('button', { class: 'btn', type: 'button', text: '‹ Zurück', disabled: r.page <= 1, onclick: () => { q.page--; load(); } }),
+                            h('span', { class: 'msg', text: `Seite ${r.page} von ${r.pages}` }),
+                            h('button', { class: 'btn', type: 'button', text: 'Weiter ›', disabled: r.page >= r.pages, onclick: () => { q.page++; load(); } }),
+                        ] : []));
+                    } catch (err) { list.replaceChildren(h('p', { class: 'msg err', text: err.message })); }
+                };
+                let timer = 0;
+                const search = h('input', { type: 'search', placeholder: 'Benutzer suchen (E-Mail-Adresse)', 'aria-label': 'Benutzer suchen', autocomplete: 'off', autocapitalize: 'none', spellcheck: false,
+                    oninput: (e) => { clearTimeout(timer); timer = setTimeout(() => { q.text = e.target.value.trim(); q.page = 1; load(); }, 250); } });
+
+                const inv = { email: '', lang: 'de', role: 'user' };
+                load();
+                return [h('h3', { text: 'Benutzerverwaltung' }), flash,
+                    h('label', { class: 'field' }, h('span', { text: 'Suche' }), search),
+                    count, list, pager,
+                    h('h3', { text: 'Benutzer einladen' }),
+                    h('p', { class: 'msg', text: 'Legt das Konto an und schickt einen Link, über den die Person ihr Passwort selbst festlegt.' }),
+                    h('div', { class: 'row' }, h('label', { class: 'field' }, h('span', { text: 'E-Mail-Adresse' }), h('input', { type: 'email', autocomplete: 'off', oninput: (e) => { inv.email = e.target.value; } })),
+                        h('label', { class: 'field' }, h('span', { text: 'Sprache der Mail' }), h('select', { onchange: (e) => { inv.lang = e.target.value; } }, [['de', 'Deutsch'], ['en', 'English']].map(([v, t]) => h('option', { value: v, text: t }))))),
+                    h('label', { class: 'chk-box' }, h('input', { type: 'checkbox', onchange: (e) => { inv.role = e.target.checked ? 'admin' : 'user'; } }), 'Als Admin anlegen'),
+                    h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'button', text: 'Einladen', disabled: !S.mail, onclick: () => act(() => api('POST', '/admin/users', inv), 'Einladung gesendet.') })),
+                    S.mail ? null : h('p', { class: 'msg err', text: 'Ohne eingerichteten Mailversand (Bereich „Mail & Registrierung“) kann niemand eingeladen werden.' })];
+            },
+            mailreg: () => {
+                const box = h('div', {}, h('p', { class: 'msg', text: 'Lädt …' }));
+                const flash = h('p', { class: 'msg', hidden: true });
+                const say = (text, err = false) => { flash.hidden = false; flash.className = 'msg' + (err ? ' err' : ''); flash.textContent = text; };
+                let data = null;
                 const render = () => {
                     const c = data.config;
                     const f = { ...c, smtp_pass: '', smtp_pass_clear: false };
                     const text = (label, key, o = {}) => h('label', { class: 'field' }, h('span', { text: label }), h('input', { type: o.type || 'text', value: f[key] ?? '', placeholder: o.ph || '', autocomplete: 'off', autocapitalize: 'none', spellcheck: false, oninput: (e) => { f[key] = o.num ? Number(e.target.value) : e.target.value; } }));
                     const sel = (label, key, opts) => h('label', { class: 'field' }, h('span', { text: label }), h('select', { onchange: (e) => { f[key] = e.target.value; } }, opts.map(([v, t]) => h('option', { value: v, text: t, selected: f[key] === v }))));
-                    const inv = { email: '', lang: 'de', role: 'user' };
                     box.replaceChildren(...[
-                        h('h3', { text: `Benutzer (${data.users.length})` }),
-                        ...data.users.map(userRow),
-                        h('h3', { text: 'Benutzer einladen' }),
-                        h('p', { class: 'msg', text: 'Legt das Konto an und schickt einen Link, über den die Person ihr Passwort selbst festlegt.' }),
-                        h('div', { class: 'row' }, h('label', { class: 'field' }, h('span', { text: 'E-Mail-Adresse' }), h('input', { type: 'email', autocomplete: 'off', oninput: (e) => { inv.email = e.target.value; } })),
-                            h('label', { class: 'field' }, h('span', { text: 'Sprache der Mail' }), h('select', { onchange: (e) => { inv.lang = e.target.value; } }, [['de', 'Deutsch'], ['en', 'English']].map(([v, t]) => h('option', { value: v, text: t }))))),
-                        h('label', { class: 'chk-box' }, h('input', { type: 'checkbox', onchange: (e) => { inv.role = e.target.checked ? 'admin' : 'user'; } }), 'Als Admin anlegen'),
-                        h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'button', text: 'Einladen', disabled: !data.mail, onclick: () => act(() => api('POST', '/admin/users', inv), 'Einladung gesendet.') })),
-                        data.mail ? null : h('p', { class: 'msg err', text: 'Ohne eingerichteten Mailversand (unten) kann niemand eingeladen werden.' }),
-
                         h('h3', { text: 'Registrierung' }),
                         sel('Wer darf sich selbst registrieren?', 'reg_mode', [['off', 'Niemand'], ['domains', 'Nur freigegebene Adressen und Domains'], ['any', 'Jeder mit einer E-Mail-Adresse']]),
                         h('label', { class: 'field' }, h('span', { text: 'Freigegeben (eine Domain oder Adresse pro Zeile, zum Beispiel firma.de oder anna@firma.de)' }),
@@ -1649,7 +1689,7 @@
                 };
                 const load = async () => { try { data = await api('GET', '/admin/overview'); S.mail = data.mail; render(); } catch (err) { box.replaceChildren(h('p', { class: 'msg err', text: err.message })); } };
                 load();
-                return [h('h3', { text: 'Benutzerverwaltung' }), flash, box];
+                return [h('h3', { text: 'Mail & Registrierung' }), flash, box];
             },
             system: () => {
                 const status = h('p', { class: 'msg', hidden: true });
@@ -2066,6 +2106,27 @@
 
     // ---------- init ----------
 
+    /** Text typed after the URL ("host/wetter berlin" or "host/?wetter") is searched or opened; otherwise focus the web search field. */
+    function handleLaunchText() {
+        let text = '';
+        try {
+            let path = decodeURIComponent(location.pathname);
+            if (S.base && path.startsWith(S.base)) path = path.slice(S.base.length);
+            path = path.replace(/^\/+|\/+$/g, '').replace(/^(https?:)\/(?!\/)/i, '$1//');
+            const params = new URLSearchParams(location.search);
+            const query = params.has('q') ? params.get('q') : decodeURIComponent(location.search.slice(1).replace(/\+/g, ' '));
+            text = (path + (path && query ? '?' : '') + query).trim();
+        } catch (e) { text = ''; }
+        if (text) {
+            history.replaceState(null, '', (S.base || '') + '/');
+            openWeb(webTarget(text));
+            return;
+        }
+        // No on-screen keyboard popping up on touch devices.
+        const input = document.querySelector('#websearch input');
+        if (input && !input.closest('[hidden]') && window.matchMedia('(pointer: fine)').matches) input.focus();
+    }
+
     buildShell();
     const stored = store.get('group');
     const storedId = Number(stored) || stored;
@@ -2075,5 +2136,6 @@
     renderGrid();
     if (window.ResizeObserver) { let last = 0; new ResizeObserver(() => { const w = $('#grid')?.clientWidth || 0; if (w !== last) { last = w; updateTileWidth(); schedulePack(); } }).observe($('#content')); }
     schedulePoll();
+    handleLaunchText();
     if ('serviceWorker' in navigator) navigator.serviceWorker.register(S.base + '/sw.js', { scope: S.base + '/' }).catch(() => {});
 })();

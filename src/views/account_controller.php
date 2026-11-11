@@ -112,5 +112,5 @@ try {
 header('Cache-Control: no-store');
 header('Referrer-Policy: no-referrer'); // the token in the address must not leak to other sites
 $appName = (string) Settings::get('app_name');
-$regOpen = AppConfig::get('reg_mode') !== 'off';
+$regOpen = AppConfig::get('reg_mode') !== 'off' && Mail::configured(); // sign-up needs the confirmation mail
 require APP_ROOT . '/src/views/account.php';

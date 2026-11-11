@@ -218,11 +218,28 @@ final class Accounts
         return $session !== null && ($session['role'] ?? '') === 'admin';
     }
 
-    /** @return list<array<string,mixed>> */
-    public static function listUsers(): array
+    /**
+     * One page of users, optionally filtered by a substring of the address.
+     *
+     * @return array{users:list<array<string,mixed>>,total:int,page:int,pages:int,per:int}
+     */
+    public static function listUsers(string $q = '', int $page = 1, int $per = 25): array
     {
+        $per = max(5, min(100, $per));
+        $where = '';
+        $params = [];
+        $q = trim($q);
+        if ($q !== '') {
+            $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], mb_strtolower($q)) . '%';
+            $where = " WHERE LOWER(COALESCE(NULLIF(email, ''), username)) LIKE ? ESCAPE '\\'";
+            $params[] = $like;
+        }
+        $total = (int) Db::one('SELECT COUNT(*) AS c FROM users' . $where, $params)['c'];
+        $pages = max(1, (int) ceil($total / $per));
+        $page = max(1, min($pages, $page));
         $out = [];
-        foreach (Db::all('SELECT id, username, email, role, lang, status, created_at, last_login, (totp_secret IS NOT NULL) AS totp FROM users ORDER BY id') as $u) {
+        foreach (Db::all('SELECT id, username, email, role, lang, status, created_at, last_login, (totp_secret IS NOT NULL) AS totp FROM users' . $where . ' ORDER BY id LIMIT ? OFFSET ?',
+            [...$params, $per, ($page - 1) * $per]) as $u) {
             $out[] = [
                 'id' => (int) $u['id'], 'email' => $u['email'] ?: $u['username'], 'role' => $u['role'], 'lang' => $u['lang'], 'status' => $u['status'],
                 'created_at' => (int) $u['created_at'], 'last_login' => $u['last_login'] !== null ? (int) $u['last_login'] : null,
@@ -230,7 +247,7 @@ final class Accounts
                 'totp' => (bool) $u['totp'], 'passkeys' => (int) Db::one('SELECT COUNT(*) AS c FROM passkeys WHERE user_id = ?', [$u['id']])['c'],
             ];
         }
-        return $out;
+        return ['users' => $out, 'total' => $total, 'page' => $page, 'pages' => $pages, 'per' => $per];
     }
 
     private static function activeAdmins(): int

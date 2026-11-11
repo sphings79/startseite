@@ -146,7 +146,7 @@ T::check('the link activates the account', (new Client($base, $origin))->req('GE
 $bobC = new Client($base, $origin);
 T::check('the new user signs in with the e-mail address', $bobC->login('bob@example.org', $bobPass) === 303);
 T::check('a non-admin gets 403 on the admin API', $bobC->req('GET', '/api/admin/overview')[0] === 403);
-T::check('the admin gets the overview', count($c->req('GET', '/api/admin/overview')[1]['users']) === 2);
+T::check('the admin gets the overview', $c->req('GET', '/api/admin/overview')[1]['mail'] !== null && $c->req('GET', '/api/admin/users')[1]['total'] === 2);
 
 // every user only sees their own data
 $adminState = $c->req('GET', '/api/state')[1];
@@ -192,9 +192,10 @@ T::check('the link works only once', $anon2->req('POST', '/reset', ['form' => $f
     || !str_contains($anon2->req('GET', $rp)[2], 'name="password2"'));
 T::check('sessions end and only the new password works', $bobC->req('GET', '/api/state')[0] === 401 && (new Client($base, $origin))->login('bob@example.org', $bobPass) !== 303 && ($bobC = new Client($base, $origin))->login('bob@example.org', $newPass) === 303);
 $bobPass = $newPass;
+T::check('the user list is searchable and paged', $c->req('GET', '/api/admin/users?q=BOB')[1]['total'] === 1 && $c->req('GET', '/api/admin/users?q=nobody-here')[1]['total'] === 0 && $c->req('GET', '/api/admin/users?per=5&page=99')[1]['page'] === 1 && $bobC->req('GET', '/api/admin/users')[0] === 403);
 
 // admin actions
-$bobId = (function () use ($c) { foreach ($c->req('GET', '/api/admin/overview')[1]['users'] as $u) { if ($u['email'] === 'bob@example.org') { return $u['id']; } } return 0; })();
+$bobId = (function () use ($c) { foreach ($c->req('GET', '/api/admin/users?q=bob')[1]['users'] as $u) { if ($u['email'] === 'bob@example.org') { return $u['id']; } } return 0; })();
 T::check('the admin triggers a reset mail', $c->req('POST', "/api/admin/users/$bobId/reset-mail")[0] === 200 && str_contains((string) $linkOf('bob@example.org'), '/reset?token='));
 $bobBackup = $c->req('POST', "/api/admin/users/$bobId/backups")[1]['backups'][0]['name'] ?? '';
 T::check('the admin makes a backup of one user', $bobBackup !== '');

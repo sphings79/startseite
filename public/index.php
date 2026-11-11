@@ -94,7 +94,9 @@ try {
         require APP_ROOT . '/src/views/add.php';
         exit;
     }
-    if ($path === '/' && $method === 'GET') {
+    // Any other page-like GET path (text typed after the URL by mistake) loads the start page; the script searches it.
+    $isStatic = (bool) preg_match('#^/(assets|icons|media|api)/|^/(favicon\.ico|apple-touch-icon[^/]*|robots\.txt|sw\.js)$#', $path);
+    if ($method === 'GET' && !$isStatic) {
         header('Cache-Control: no-store');
         $boot = Api::state($session);
         require APP_ROOT . '/src/views/app.php';

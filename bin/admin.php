@@ -51,9 +51,13 @@ function userByEmail(string $email): array
 try {
     switch ($cmd) {
         case 'list':
-            foreach (Accounts::listUsers() as $u) {
-                out(sprintf('#%d  %-35s %-6s %-9s %d bookmarks  last login %s', $u['id'], $u['email'], $u['role'], $u['status'], $u['dials'], $u['last_login'] ? date('Y-m-d H:i', $u['last_login']) : '-'));
-            }
+            $page = 1;
+            do {
+                $res = Accounts::listUsers('', $page++, 100);
+                foreach ($res['users'] as $u) {
+                    out(sprintf('#%d  %-35s %-6s %-9s %d bookmarks  last login %s', $u['id'], $u['email'], $u['role'], $u['status'], $u['dials'], $u['last_login'] ? date('Y-m-d H:i', $u['last_login']) : '-'));
+                }
+            } while ($res['page'] < $res['pages']);
             $cfg = AppConfig::all();
             out('registration: ' . $cfg['reg_mode'] . ($cfg['reg_allowed'] !== '' ? ' (' . str_replace("\n", ', ', $cfg['reg_allowed']) . ')' : ''));
             break;
