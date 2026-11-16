@@ -46,6 +46,7 @@
         down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
         pick: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>',
         crop: '<path d="M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14"/>',
+        plus: '<path d="M12 5v14M5 12h14"/>',
         grip: '<circle cx="9" cy="6" r="1.3"/><circle cx="15" cy="6" r="1.3"/><circle cx="9" cy="12" r="1.3"/><circle cx="15" cy="12" r="1.3"/><circle cx="9" cy="18" r="1.3"/><circle cx="15" cy="18" r="1.3"/>',
         gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
     };
@@ -514,6 +515,7 @@
         el.style.setProperty('--sec-radius', sec.radius + 'px');
         el.style.setProperty('--sec-pad', sec.padding + 'px');
         const gear = h('button', { type: 'button', class: 'gear icon-btn', title: 'Abschnitt bearbeiten', 'aria-label': 'Abschnitt bearbeiten', onclick: (e) => { e.stopPropagation(); editSection(sec); } }, icon('gear'));
+        const plus = h('button', { type: 'button', class: 'secadd icon-btn', title: 'Lesezeichen in diesen Abschnitt', 'aria-label': 'Lesezeichen in diesen Abschnitt', onclick: (e) => { e.stopPropagation(); editDial(null, { section_id: sec.id }); } }, icon('plus'));
         const grip = h('button', { type: 'button', class: 'grip icon-btn', title: 'Abschnitt verschieben', 'aria-label': 'Abschnitt verschieben',
             onclick: (e) => e.stopPropagation(), onpointerdown: (e) => sectionDragStart(e, el) }, icon('grip'));
         if (sec.title) {
@@ -522,10 +524,10 @@
                     sec.collapsed = !sec.collapsed;
                     renderGrid();
                     try { await api('PUT', `/sections/${sec.id}`, { collapsed: sec.collapsed }); } catch (err) { toast(err.message); }
-                } }, h('span', { class: 'caret', text: sec.collapsed ? '▸' : '▾' }), sec.title, grip, gear);
+                } }, h('span', { class: 'caret', text: sec.collapsed ? '▸' : '▾' }), sec.title, plus, grip, gear);
             el.append(head);
         } else {
-            const corner = h('div', { class: 'corner' }, grip, gear);
+            const corner = h('div', { class: 'corner' }, plus, grip, gear);
             el.append(corner);
         }
         const body = h('div', { class: 'grid sbody' + (list ? ' listv' : '') });
@@ -913,8 +915,9 @@
         try {
             if (st.overTab !== null && st.overTab !== undefined) {
                 const ids = [...dialsOf(st.overTab).map((x) => x.id), st.d.id];
-                await api('POST', '/dials/order', { group_id: st.overTab, ids });
-                const target = sectionsOf(st.overTab)[0]?.id;
+                const res = await api('POST', '/dials/order', { group_id: st.overTab, ids });
+                if (res?.section && !S.sections.some((x) => x.id === res.section.id)) S.sections.push(res.section);
+                const target = res?.section?.id || sectionsOf(st.overTab)[0]?.id;
                 // Only the moved bookmark changes section; the others stay where they are (the server does the same).
                 ids.forEach((id, i) => { const x = S.dials.find((y) => y.id === id); x.group_id = st.overTab; x.position = i; if (id === st.d.id) x.section_id = target; });
                 toast('Verschoben nach „' + S.groups.find((g) => g.id === st.overTab).title + '“');

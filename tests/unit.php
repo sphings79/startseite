@@ -79,6 +79,8 @@ T::check('layout moves dials between sections and sets order', array_column($pla
 T::throws('layout with a foreign section is rejected', fn () => Sections::layout(['group_id' => $home, 'sections' => [['id' => Sections::defaultId($work), 'ids' => [$ids[0]]]]]), InvalidArgumentException::class);
 Sections::order(['group_id' => $home, 'ids' => [$s2['id'], $def]]);
 T::check('sections can be reordered', (int) Db::one('SELECT id FROM sections WHERE group_id = ? ORDER BY position LIMIT 1', [$home])['id'] === $s2['id']);
+$mv = Sections::movedId($work);
+T::check('"Verschoben" section is created last and reused', $mv === Sections::movedId($work) && (int) Db::one('SELECT position FROM sections WHERE id = ?', [$mv])['position'] === (int) Db::one('SELECT MAX(position) m FROM sections WHERE group_id = ?', [$work])['m'] && Db::one('SELECT title FROM sections WHERE id = ?', [$mv])['title'] === 'Verschoben');
 Sections::delete($s2['id']);
 T::check('deleting a section moves its dials to another one', (int) Db::one('SELECT COUNT(*) c FROM dials WHERE section_id = ?', [$def])['c'] === 3);
 T::throws('the last section of a tab cannot be deleted', fn () => Sections::delete($def), InvalidArgumentException::class);

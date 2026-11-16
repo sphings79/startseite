@@ -7,6 +7,7 @@ declare(strict_types=1);
  */
 final class Sections
 {
+    public const MOVED_TITLE = 'Verschoben';
     private const WIDTHS = [0, 25, 33, 50, 67, 75, 100]; // 0 = automatic, sized by its content
     private const MODES = ['inherit', 'tiles', 'list'];
     private const SIZES = ['', 's', 'm', 'l'];
@@ -52,6 +53,16 @@ final class Sections
         }
         Db::run('INSERT INTO sections (group_id, user_id, position, padding) VALUES (?, ?, 0, 0)', [$groupId, Ctx::uid()]);
         return Db::insertId();
+    }
+
+    /** Section "Verschoben" at the end of a tab; takes bookmarks moved in from other tabs. Created on first use. */
+    public static function movedId(int $groupId): int
+    {
+        $row = Db::one('SELECT id FROM sections WHERE group_id = ? AND user_id = ? AND title = ? ORDER BY position, id LIMIT 1', [$groupId, Ctx::uid(), self::MOVED_TITLE]);
+        if ($row) {
+            return (int) $row['id'];
+        }
+        return (int) self::create(['group_id' => $groupId, 'title' => self::MOVED_TITLE, 'width' => 100])['id'];
     }
 
     public static function belongs(int $sectionId, int $groupId): bool

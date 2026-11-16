@@ -151,13 +151,17 @@ button, input, select { font: inherit; color: inherit; }
 .sec .corner .gear { margin-left: 0; opacity: 1; }
 .sec:hover .corner, .sec .corner:focus-within { opacity: .8; }
 .sec .grip { width: 28px; height: 28px; opacity: .35; cursor: grab; touch-action: none; }
-.sec-title .grip { margin-left: auto; }
-.sec-title .grip + .gear { margin-left: 0; }
+.sec .secadd { width: 28px; height: 28px; opacity: .35; }
+.sec .secadd svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.sec:hover .secadd, .sec .secadd:focus-visible { opacity: .8; }
+.sec .corner .secadd { opacity: 1; }
+.sec-title .secadd { margin-left: auto; }
+.sec-title .secadd + .grip, .sec-title .grip + .gear { margin-left: 0; }
 .sec .corner .grip { opacity: 1; }
 .sec-dragging { opacity: .45; outline: 2px dashed var(--accent); outline-offset: 2px; }
 .sec .grip svg { width: 16px; height: 16px; fill: currentColor; stroke: none; }
 .sec:hover .gear, .sec .gear:focus-visible { opacity: .8; }
-@media (hover: none) { .sec .gear, .sec .grip { opacity: .45; } .sec .corner { opacity: .6; } }
+@media (hover: none) { .sec .gear, .sec .grip, .sec .secadd { opacity: .45; } .sec .corner { opacity: .6; } }
 .sec.collapsed .sbody { display: none; }
 .sec .gear svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .sec.auto { flex: 0 0 auto; max-width: 100%; width: calc(var(--n, 4) * var(--tile-w, 104px) + (var(--n, 4) - 1) * var(--gap) + 2 * var(--sec-pad, 0px) + 2 * var(--sec-bw, 0px)); }

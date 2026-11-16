@@ -585,12 +585,20 @@ final class Api
         $pdo = Db::pdo();
         $pdo->beginTransaction();
         $default = Sections::defaultId($group);
+        $movedSec = null;
         foreach (array_values((array) ($in['ids'] ?? [])) as $i => $id) {
+            // Bookmarks coming from another tab land in the "Verschoben" section at the end of this one.
+            $from = Db::one('SELECT group_id FROM dials WHERE id = ? AND user_id = ?', [(int) $id, Ctx::uid()]);
+            if ($from && (int) $from['group_id'] !== $group) {
+                $movedSec ??= Sections::movedId($group);
+                Db::run('UPDATE dials SET group_id = ?, position = ?, section_id = ? WHERE id = ? AND user_id = ?', [$group, $i, $movedSec, (int) $id, Ctx::uid()]);
+                continue;
+            }
             Db::run('UPDATE dials SET group_id = ?, position = ?, section_id = CASE WHEN section_id IN (SELECT id FROM sections WHERE group_id = ?) THEN section_id ELSE ? END WHERE id = ? AND user_id = ?',
                 [$group, $i, $group, $default, (int) $id, Ctx::uid()]);
         }
         $pdo->commit();
-        Http::json(['ok' => true]);
+        Http::json(['ok' => true, 'section' => $movedSec ? Sections::out(Db::one('SELECT * FROM sections WHERE id = ?', [$movedSec])) : null]);
     }
 
     private static function dialRefresh(int $id): never
